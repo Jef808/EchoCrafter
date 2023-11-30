@@ -9,7 +9,7 @@
 ;; Version: 0.0.1
 ;; Keywords: abbrev bib c calendar comm convenience data docs emulations extensions faces files frames games hardware help hypermedia i18n internal languages lisp local maint mail matching mouse multimedia news outlines processes terminals tex tools unix vc wp
 ;; Homepage: https://github.com/jfa/speech-edit
-;; Package-Requires: ((emacs "25.1"))
+;; Package-Requires: ((emacs "27.1"))
 ;;
 ;; This file is not part of GNU Emacs.
 ;;
@@ -22,21 +22,27 @@
 (require 'url)
 (require 'json)
 
+(defvar speech-edit--query-queue '()
+  "Queue for queries to be processed through openai API")
+
 (defun speech-edit--prompt-openai-llm (query)
   "From a user QUERY, handles the openai prompt."
-  nil)
+  (message "Processing query %s" query))
 
-(defvar speech-edit--speech-to-text-executable "./run-speech-reco.sh")
-(defvar speech-edit--speech-to-text-mock-executable "./mock-run-speech-reco.sh")
-(defvar speech-edit--log-buffer-name "*speech-edit-log*")
-(defvar speech-edit--transcription-buffer-name "*speech-edit-transcription*")
-(defvar speech-edit--format-time-string "[%Y-%m-%d %H:%M:%S] ")
-(defvar speech-edit--delay-before-sigkill 4.0)
-
+(defvar speech-edit--speech-to-text-executable "./mock-run-speech-reco.sh"
+  "Executable to speech-to-text executable")
+(defvar speech-edit--log-buffer-name "*speech-edit-log*"
+  "Buffer to collect logs.")
+(defvar speech-edit--format-time-string "[%Y-%m-%d %H:%M:%S] "
+  "Format for timestamps in log buffer.")
+(defvar speech-edit--delay-before-sigkill 4.0
+  "Seconds for which to wait before we send SIGKILL when termination hangs.")
 (defvar speech-edit--transcription-process nil
-  "Variable to store a handle to a running recording process")
+  "Variable to store a handle to a running recording process.")
+(defvar speech-edit--transcription-buffer-name "*speech-edit-transcription*"
+  "Buffer to capture the transcription subprocess output.")
 
-(defun speech-edit--log-entry (type content)
+(defun speech-edit--add-log-entry (type content)
   "Log CONTENT based on TYPE (:error or :transcript) to a logging buffer."
   ;; Note the timestamp immediately on call
   (let ((timestamp (format-time-string speech-edit--format-time-string)))
@@ -53,45 +59,62 @@
                      ((eq type :result) "[TRANSCRIPT]"))))
       (insert (format "%s: %s: %s\n" timestamp prefix content))))))
 
-(defun speech-edit--handle-transcription-output (output)
-  "Process RESULT based on ERROR.
- Log to a temporary buffer and notify user on error."
-  ;; Check if error is non-empty
-  (let* ((parsed-output (json-read-from-string output))
-         (result (cdr (assoc 'result parsed-output)))
-         (error (cdr (assoc 'error parsed-output))))
-    (if (not (string-empty-p error))
-        (progn
-          ;; Log the error and notify user
-          (speech-edit--log-entry :error error)
-          (message "Transcription error: %s" error))
-      ;; If no error, log the result and return it
-      (progn
-        (speech-edit--log-entry :result result)
-        result))))
+(defun speech-edit--collect-metadata ()
+  "Collect and return metadata which will accompany the transcribed speech"
+  (let ((timestamp (time-convert (current-time) 'integer))
+        (buffer-name (buffer-name))
+        (point-pos (point))
+        (region-start (if (use-region-p) (region-beginning) nil))
+        (region-end (if (use-region-p) (region-end) nil)))
+    (let ((region-content (if (and region-start region-end) (buffer-substring-no-properties region-start region-end))))
+      (list :timestamp timestamp
+            :buffer buffer-name
+            :point point-pos
+            :region-start region-start
+            :region-end region-end
+            :region-content region-content))))
 
-(defun speech-edit--transcription-sentinel (proc event)
-  "Sentinel function for transcription PROC. Triggered on EVENT."
-  (when (buffer-live-p (process-buffer proc))
-    (let ((event-type (substring event 0 -1))) ; Remove trailing newline
-      (cond
-       ((or (string= event-type "finished")
-            (string= event-type "exited"))
-        (message "Recording process finished normally."))
-       ((string= event-type "killed")
-        (progn
-          (speech-edit--log-entry :error "Transcription process lingering. Sending SIGKILL to terminate")
-          (message "Recording process killed.")))
-       (t
-        (progn
-          (speech-edit--log-entry :error (format "Transcription process exited with unhandled process event type: %s" event-type))
-          (message "Recording process ended with event: %s" event-type)))
-      ;; Switch to the transcription output buffer
-      (with-current-buffer (process-buffer proc)
-        ;; Send content of the buffer to the transcription handler
-        (speech-edit--handle-transcription-output (buffer-string))
-        ;; Clean up the buffer
-        (kill-buffer (current-buffer)))))))
+(defun speech-edit--handle-process-termination (event)
+  "Handle/log PROC termination EVENT.
+Return t if process terminated gracefully, nil otherwise."
+  (let ((event-type (substring event 0 -1))) ; Remove trailing newline
+    (cond
+     ((or (string= event-type "finished")
+          (string= event-type "exited"))
+      (message "Recording process finished normally.")
+      t)
+     ((string= event-type "killed")
+      (progn
+        (speech-edit--add-log-entry :error "Transcription process lingering. Sending SIGKILL to terminate")
+        (message "Recording process killed."))
+      nil)
+     (t
+      (progn
+        (speech-edit--add-log-entry :error (format "Transcription process exited with unhandled process event type: %s" event-type))
+        (message "Recording process ended with event: %s" event-type))
+      nil))))
+
+(defun speech-edit--handle-speech-to-text-output (proc)
+  (let ((output (with-current-buffer (process-buffer proc)
+                  (buffer-string))))
+    (let ((parsed-output (json-read-from-string output)))
+      (let ((result (cdr (assoc 'result parsed-output)))
+            (error (cdr (assoc 'error parsed-output))))
+        (if (not (string-empty-p error))
+          ;; If error, log it and notify user
+          (progn
+            (speech-edit--add-log-entry :error error)
+            (message "Transcription error: %s" error)
+            "")
+          ;; If no error, log the result and return it
+          (progn
+            (speech-edit--add-log-entry :result result)
+            result))))))
+
+(defun speech-edit--enqueue-query (query metadata)
+  "Add QUERY along with METADATA to the processing queue."
+  (push (cons :query query) metadata) speech-edit--query-queue
+  (message "Enqueued query %s" query))
 
 (defun speech-edit--start-recording ()
   "Start recording and transcribing asynchronously.
@@ -100,14 +123,20 @@ a transcription process was already running."
   (interactive)
   (when (process-live-p speech-edit--transcription-process)
     (error "A transcription process is already running"))
-  (let ((process-buffer (get-buffer-create speech-edit--transcription-buffer-name)))
+  (let ((metadata (speech-edit--collect-metadata)))
     (setq speech-edit--transcription-process (make-process
                                               :name "speech-edit-transcription"
-                                              :buffer process-buffer
                                               :command (list speech-edit--speech-to-text-executable)
                                               :noquery t
                                               :stderr (make-pipe-process :name "speech-edit-transcription-stderr" :buffer nil :noquery t)
-                                              :sentinel #'speech-edit--transcription-sentinel))))
+                                              :sentinel (lambda (proc event)
+                                                          (and
+                                                           (when (speech-edit--handle-process-termination event)
+                                                             (let ((transcript (speech-edit--handle-speech-to-text-output proc)))
+                                                               (and (not (string-empty-p transcript))
+                                                                    (speech-edit--enqueue-query transcript metadata)))
+                                                             (kill-buffer (process-buffer proc)))))))))
+
 
 (defun speech-edit--stop-recording ()
   "Stop the recording process."
@@ -124,7 +153,6 @@ a transcription process was already running."
     (setq speech-edit--transcription-process nil))
   (unless (process-live-p speech-edit--transcription-process)
     (message "No recording process is running.")))
-
 
 
 (provide 'speech-edit)
