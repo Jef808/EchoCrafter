@@ -22,26 +22,108 @@
 (require 'url)
 (require 'json)
 
-(defun speech-edit--speech-reco-output-handler (process output)
-  "Handle OUTPUT from the PROCESS."
-  (when (buffer-live-p (process-buffer process))
-    (with-current-buffer (process-buffer process)
+(defun speech-edit--prompt-openai-llm (query)
+  "From a user QUERY, handles the openai prompt."
+  nil)
+
+(defvar speech-edit--speech-to-text-executable "./run-speech-reco.sh")
+(defvar speech-edit--speech-to-text-mock-executable "./mock-run-speech-reco.sh")
+(defvar speech-edit--log-buffer-name "*speech-edit-log*")
+(defvar speech-edit--transcription-buffer-name "*speech-edit-transcription*")
+(defvar speech-edit--format-time-string "[%Y-%m-%d %H:%M:%S] ")
+(defvar speech-edit--delay-before-sigkill 4.0)
+
+(defvar speech-edit--transcription-process nil
+  "Variable to store a handle to a running recording process")
+
+(defun speech-edit--log-entry (type content)
+  "Log CONTENT based on TYPE (:error or :transcript) to a logging buffer."
+  ;; Note the timestamp immediately on call
+  (let ((timestamp (format-time-string speech-edit--format-time-string)))
+    ;; Create buffer if it doesn't exist and switch to it
+    (with-current-buffer (get-buffer-create speech-edit--log-buffer-name)
+      ;; Make sure point is at the end of content
       (goto-char (point-max))
-      (insert output))))
+      ;; Insert newline if not at the first column
+      (unless (eq (current-column) 0)
+        (insert "\n"))
+      ;; Log the content based on type
+      (let ((prefix (cond
+                     ((eq type :error) "[ERROR]")
+                     ((eq type :result) "[TRANSCRIPT]"))))
+      (insert (format "%s: %s: %s\n" timestamp prefix content))))))
 
-(defun speech-edit--speech-reco-sentinel (process event)
-  "Handle EVENT for the PROCESS."
-  (when (string-match-p "finished\\|exited" event)
-    (message "Transcription finished")))
+(defun speech-edit--handle-transcription-output (output)
+  "Process RESULT based on ERROR.
+ Log to a temporary buffer and notify user on error."
+  ;; Check if error is non-empty
+  (let* ((parsed-output (json-read-from-string output))
+         (result (cdr (assoc 'result parsed-output)))
+         (error (cdr (assoc 'error parsed-output))))
+    (if (not (string-empty-p error))
+        (progn
+          ;; Log the error and notify user
+          (speech-edit--log-entry :error error)
+          (message "Transcription error: %s" error))
+      ;; If no error, log the result and return it
+      (progn
+        (speech-edit--log-entry :result result)
+        result))))
 
-(defun speech-edit--run-speech-reco ()
-  "Run the speech-reco script asyncronously."
-  (let ((process (make-process :name "speech-reco"
-                               :buffer "*speech-reco-output*"
-                               :command '("python3" "./speech-reco.py")
-                               :filter #'speech-edit--speech-reco-output-handler
-                               :sentinel #'speech-edit--speech-reco-sentinel)))
-    (message "Started speech-reco script: %s" (process-name process))))
+(defun speech-edit--transcription-sentinel (proc event)
+  "Sentinel function for transcription PROC. Triggered on EVENT."
+  (when (buffer-live-p (process-buffer proc))
+    (let ((event-type (substring event 0 -1))) ; Remove trailing newline
+      (cond
+       ((or (string= event-type "finished")
+            (string= event-type "exited"))
+        (message "Recording process finished normally."))
+       ((string= event-type "killed")
+        (progn
+          (speech-edit--log-entry :error "Transcription process lingering. Sending SIGKILL to terminate")
+          (message "Recording process killed.")))
+       (t
+        (progn
+          (speech-edit--log-entry :error (format "Transcription process exited with unhandled process event type: %s" event-type))
+          (message "Recording process ended with event: %s" event-type)))
+      ;; Switch to the transcription output buffer
+      (with-current-buffer (process-buffer proc)
+        ;; Send content of the buffer to the transcription handler
+        (speech-edit--handle-transcription-output (buffer-string))
+        ;; Clean up the buffer
+        (kill-buffer (current-buffer)))))))
+
+(defun speech-edit--start-recording ()
+  "Start recording and transcribing asynchronously.
+Note: we ignore the output from stderr, and throw when
+a transcription process was already running."
+  (interactive)
+  (when (process-live-p speech-edit--transcription-process)
+    (error "A transcription process is already running"))
+  (let ((process-buffer (get-buffer-create speech-edit--transcription-buffer-name)))
+    (setq speech-edit--transcription-process (make-process
+                                              :name "speech-edit-transcription"
+                                              :buffer process-buffer
+                                              :command (list speech-edit--speech-to-text-executable)
+                                              :noquery t
+                                              :stderr (make-pipe-process :name "speech-edit-transcription-stderr" :buffer nil :noquery t)
+                                              :sentinel #'speech-edit--transcription-sentinel))))
+
+(defun speech-edit--stop-recording ()
+  "Stop the recording process."
+  (interactive)
+  (when (process-live-p speech-edit--transcription-process)
+    (interrupt-process speech-edit--transcription-process)
+    ;; Wait for a short duration to allow process to terminate
+    (sleep-for speech-edit--delay-before-sigkill)
+    (if (process-live-p speech-edit--transcription-process)
+        (progn
+          (kill-process speech-edit--transcription-process)
+          (message "Transcription process did not terminate on SIGINT, sending SIGKILL."))
+      (message "Recording stopped."))
+    (setq speech-edit--transcription-process nil))
+  (unless (process-live-p speech-edit--transcription-process)
+    (message "No recording process is running.")))
 
 (defun generate-emacs-lisp-code (api-key emacs-environment user-query callback)
   (let ((url-request-method "POST")

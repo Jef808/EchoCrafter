@@ -1,3 +1,16 @@
+"""listens to the microphone and generate a transcript of the english speech.
+
+To terminate the process, use Ctrl-C in the terminal (send SIGINT).
+The result is in the form of a JSON object
+
+    {
+      "result": "TRANSCRIBED SPEECH",
+      "error":  "ERROR MESSAGE (IF ANY)"
+    }.
+
+It is printed to stdout, and any other output of the program is sent to stderr.
+"""
+
 import websocket
 import base64
 import pyaudio
@@ -150,4 +163,4 @@ signal.signal(signal.SIGINT, signal_handler)
 
 ws_thread.join()
 
-print(json.dumps({'result': result, 'error': error}, indent=2))
+print(json.dumps({'result': result, 'error': error}))
