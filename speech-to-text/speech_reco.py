@@ -1,12 +1,6 @@
 """listens to the microphone and generate a transcript of the english speech.
 
 To terminate the process, use Ctrl-C in the terminal (send SIGINT).
-The result is in the form of a JSON object
-
-    {
-      "result": "TRANSCRIBED SPEECH",
-      "error":  "ERROR MESSAGE (IF ANY)"
-    }.
 
 It is printed to stdout, and any other output of the program is sent to stderr.
 """
@@ -19,148 +13,153 @@ import os
 import time
 import sys
 import signal
-from threading import Thread
+import threading
 
-API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
 
-if not API_KEY:
-    print("No environment variable named ASSEMBLYAI_API_KEY found.", file=sys.stderr)
-    sys.exit(1)
-
+##################
+# # Audio config #
+##################
+SAMPLE_RATE = 16000
 FRAMES_PER_BUFFER = 3200
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-SAMPLE_RATE = 16000
-p = pyaudio.PyAudio()
-ws_app = None
-send_data_thread = None
-done = False
-SECONDS_BEFORE_EXIT = 2.5
+PIPEWIRE_DEVICE_INDEX = 13
+##############################
+# # Termination logic config #
+##############################
+# Global flag indicating when to initiate the termination logic
+_RUNNING = True
 
-# starts recording
-stream = p.open(
-   format=FORMAT,
-   channels=CHANNELS,
-   rate=SAMPLE_RATE,
-   input=True,
-   frames_per_buffer=FRAMES_PER_BUFFER
-)
+# Timeout in seconds before we fallback to pyaudio.paAbort
+_STREAM_CLEANUP_TIMEOUT = 3
 
-last_partial_transcript = ''
-final_transcripts = []
-result = ''
-error = ''
+# Fallback if toggling the above times out
+_STREAM_CLEANUP_TIMEOUT_PASSED = False
 
-time_since_last_input = 0
+# Indicator while waiting for assemblyAI to terminate the session
+_WEBSOCKET_IS_ACTIVE = False
 
-def on_message(ws, message):
-    """
-    is being called on every message
-    """
-    global last_partial_transcript
-    global final_transcript
-    transcript = json.loads(message)
-    message_type = transcript['message_type']
+# Timeout in seconds before we forcefully close the websocket while waiting
+_WEBSOCKET_CLEANUP_TIMEOUT = 3
 
-    if message_type == 'SessionBegins':
-        return
+def signal_handler(sig, frame):
+    global _RUNNING
+    _RUNNING = False  # Signal to PyAudio to stop processing
 
-    text = transcript['text']
+    def timeout_elapsed(start_time, duration):
+        return time.time() - start_time > duration
 
-    if message_type == 'PartialTranscript':
-        last_partial_transcript = text
-    elif transcript['message_type'] == 'FinalTranscript':
-        final_transcripts.append(last_partial_transcript)
-        print(''.join(final_transcripts), file=sys.stderr)
-        last_partial_transcript = ''
+    # Wait for PyAudio stream to be inactive or timeout
+    time_start = time.time()
+    while stream.is_active() and not timeout_elapsed(time_start, _STREAM_CLEANUP_TIMEOUT):
+        time.sleep(0.1)
+
+    # Attempt to close PyAudio stream
+    # # NOTE: toggling the flag here makes our stream callback
+    # ignore any new data anyway.
+    try:
+        if stream.is_active():
+            _STREAM_CLEANUP_TIMEOUT_PASSED = True
+            stream.stop_stream()
+        stream.close()
+    except Exception as e:
+        print(f"Error on pyaudio stream cleanup: {e}", file=sys.stderr)
+
+    # Signal to AssemblyAI to close the session
+    ws.send(json.dumps({"terminate_session": True}))
+
+    # Wait for WebSocket to close or timeout
+    time_start = time.time()
+    while _WEBSOCKET_IS_ACTIVE and not timeout_elapsed(ws_timeout_start, _WEBSOCKET_CLEANUP_TIMEOUT):
+        time.sleep(0.1)
+
+    p.terminate()  # Terminate PyAudio
 
 
-def on_error(ws, error):
-    """
-    is being called in case of errors
-    """
-    sys.exit(1)
-
-def on_close(ws, close_status_code, close_msg):
-    """
-    is being called on session end
-    """
-    global result
-    global error
-
-    error = close_msg
-    result = ''.join(final_transcripts)
-
-def on_open(ws):
-    """
-    is being called on session begin
-    """
-    global send_data_thread
-    global done
-
-    def send_data():
-        while not done:
-            # read from the microphone
-            data = stream.read(FRAMES_PER_BUFFER, exception_on_overflow=False)
-
-            # encode the raw data into base64 to send it over the websocket
-            data = base64.b64encode(data).decode("utf-8")
-
-            # Follow the message format of the Real-Time service (see documentation)
-            json_data = json.dumps({"audio_data":str(data)})
-
-            # Send the data over the wire
-            ws.send(json_data)
-
-    print("Websocket connection to AssemblyAI api initiated", file=sys.stderr)
-
-    # Start a thread where we send data to avoid blocking the 'read' thread
-    send_data_thread = Thread(target=send_data)
-    send_data_thread.start()
-
-def start():
-    global ws_app
-
-    # Set up the WebSocket connection with your desired callback functions
-    websocket.enableTrace(False)
-
-    # After opening the WebSocket connection, send an authentication header with your API token
-    auth_header = {"Authorization": f"{API_KEY}" }
-    ws_app = websocket.WebSocketApp(
-        f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}",
-        header=auth_header,
-        on_message=on_message,
-        on_open=on_open,
-        on_error=on_error,
-        on_close=on_close
-    )
-    # Start the WebSocket connection
-    ws_app.run_forever()
-
-def stop():
-    global done
-    print(f"Exiting in {SECONDS_BEFORE_EXIT} seconds...", file=sys.stderr)
-
-    start_timer = time.process_time()
-
-    done = True
-    send_data_thread.join()
-
-    elapsed_time = time.process_time() - start_timer
-
-    time.sleep(max(0, SECONDS_BEFORE_EXIT - elapsed_time))
-
-    ws_app.close()
-
-def signal_handler(signal, frame):
-    stop()
-
-ws_thread = Thread(target=start)
-
-ws_thread.start()
-
+# Register the signal handler
 signal.signal(signal.SIGINT, signal_handler)
 
-ws_thread.join()
 
-print(json.dumps({'result': result, 'error': error}))
+# Correctly format and send data to both `ws` and `logger` endpoints
+def send_data(ws, in_data, frame_count, time_info, status):
+    data = {"audio_data": base64.b64encode(in_data).decode("utf-8")}
+    ws.send(json.dumps(data))
+
+    # Print all data for logging
+    meta_data = {
+        "frame_count": frame_count,
+        "time_info": time_info,
+        "status": status
+    }
+    print(json.dumps(meta_data), file=sys.stderr)
+
+
+# This callback is used by pyaudio's stream to handle the collected
+# audio data. It runs in a separate thread.
+def pyaudio_callback(in_data, frame_count, time_info, status):
+    if _WEBSOCKET_IS_ACTIVE:
+        if status != pyaudio.paNoError and frame_count > 0:
+            print(f"Stream error: {status}", file=sys.stderr)
+        if _STREAM_CLEANUP_TIMEOUT_PASSED:
+            print(f"Pyaudio cleanup timeout is passed, ignoring its feed", file=sys.stderr)
+            return (None, pyaudio.paAbort)
+        send_data(ws, in_data, frame_count, time_info, status)
+    if _RUNNING:
+        return (None, pyaudio.paContinue)
+    else:
+        return (None, pyaudio.paComplete)
+
+
+####################################################
+# The pyaudio stream reading the microphone device #
+####################################################
+p = pyaudio.PyAudio()
+stream = p.open(
+    format=FORMAT,
+    channels=CHANNELS,
+    rate=SAMPLE_RATE,
+    input=True,
+    frames_per_buffer=FRAMES_PER_BUFFER,
+    input_device_index=PIPEWIRE_DEVICE_INDEX,
+    stream_callback=pyaudio_callback)
+
+
+#################################################################
+# Setup the websocket connecting to the assemblyAI api endpoint #
+#################################################################
+def on_open(ws):
+    global _WEBSOCKET_IS_ACTIVE
+    _WEBSOCKET_IS_ACTIVE = True
+
+def on_close(ws, ec, err):
+    global _WEBSOCKET_IS_ACTIVE
+    _WEBSOCKET_IS_ACTIVE = False
+
+def on_message(ws, msg):
+    payload = json.loads(msg)
+    if not payload['text']:
+        return
+    if payload['message_type'] == 'PartialTranscript':
+        print(f"[PARTIAL TRANSCRIPT]: {payload['text']}")
+    elif payload['message_type'] == 'FinalTranscript':
+        print(f"[FINAL TRANSCRIPT]:   {payload['text']}")
+
+
+API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
+auth_header = {"Authorization": f"{API_KEY}"}
+
+ws = websocket.WebSocketApp(
+    f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}",
+    header=auth_header,
+    on_message=on_message,
+    on_error=lambda ws, err: print(err, file=sys.stderr),
+    on_close=on_close,
+    on_open=on_open)
+
+
+#############################################################################
+# Run until the program receives SIGINT, in which case it gracefully exists #
+#############################################################################
+ws.run_forever()
+
+print("All sessions terminated and resources cleaned up", file=sys.stderr)
