@@ -10,12 +10,20 @@ import base64
 import pyaudio
 import json
 import os
+import io
 import time
 import sys
 import signal
-import threading
 
-
+# On my system, these are some
+# values of possible values
+# for `input_device_index`
+#
+# index: 13 -----> pipewire
+# index: 14 -----> pulse
+# index: 18 -----> default
+# index: 4  -----> sysdefault
+#
 ##################
 # # Audio config #
 ##################
@@ -42,6 +50,9 @@ _WEBSOCKET_IS_ACTIVE = False
 # Timeout in seconds before we forcefully close the websocket while waiting
 _WEBSOCKET_CLEANUP_TIMEOUT = 3
 
+_LOGGER = None
+
+# Set up the signal handler responsible for terminating the program at the end
 def signal_handler(sig, frame):
     global _RUNNING
     _RUNNING = False  # Signal to PyAudio to stop processing
@@ -85,43 +96,33 @@ def send_data(ws, in_data, frame_count, time_info, status):
     data = {"audio_data": base64.b64encode(in_data).decode("utf-8")}
     ws.send(json.dumps(data))
 
-    # Print all data for logging
-    meta_data = {
-        "frame_count": frame_count,
-        "time_info": time_info,
-        "status": status
+    log_data = {
+        "PYAUDIO": {
+            "in_data": "<<blob>>",
+            "frame_count": frame_count,
+            "time_info": time_info,
+            "status": status
+        }
     }
-    print(json.dumps(meta_data), file=sys.stderr)
+    # Print all data for logging
+    print(json.dumps(log_data), file=_LOGGER)
 
 
 # This callback is used by pyaudio's stream to handle the collected
 # audio data. It runs in a separate thread.
 def pyaudio_callback(in_data, frame_count, time_info, status):
+    if _RUNNING and _STREAM_CLEANUP_TIMEOUT_PASSED:
+        return (None, pyaudio.paAbort)
+
     if _WEBSOCKET_IS_ACTIVE:
-        if status != pyaudio.paNoError and frame_count > 0:
-            print(f"Stream error: {status}", file=sys.stderr)
-        if _STREAM_CLEANUP_TIMEOUT_PASSED:
-            print(f"Pyaudio cleanup timeout is passed, ignoring its feed", file=sys.stderr)
-            return (None, pyaudio.paAbort)
         send_data(ws, in_data, frame_count, time_info, status)
+
     if _RUNNING:
         return (None, pyaudio.paContinue)
-    else:
+    elif not _STREAM_CLEANUP_TIMEOUT_PASSED:
         return (None, pyaudio.paComplete)
-
-
-####################################################
-# The pyaudio stream reading the microphone device #
-####################################################
-p = pyaudio.PyAudio()
-stream = p.open(
-    format=FORMAT,
-    channels=CHANNELS,
-    rate=SAMPLE_RATE,
-    input=True,
-    frames_per_buffer=FRAMES_PER_BUFFER,
-    input_device_index=PIPEWIRE_DEVICE_INDEX,
-    stream_callback=pyaudio_callback)
+    else:
+        return (None, pyaudio.paAbort)
 
 
 #################################################################
@@ -137,29 +138,57 @@ def on_close(ws, ec, err):
 
 def on_message(ws, msg):
     payload = json.loads(msg)
-    if not payload['text']:
-        return
-    if payload['message_type'] == 'PartialTranscript':
-        print(f"[PARTIAL TRANSCRIPT]: {payload['text']}")
-    elif payload['message_type'] == 'FinalTranscript':
-        print(f"[FINAL TRANSCRIPT]:   {payload['text']}")
+    if 'text' in payload and payload['message_type'] == 'FinalTranscript':
+        # Print the valuable responses to stdout
+        print(payload['text'])
 
+    print(json.dumps({"ASSEMBLYAI": payload}), file=_LOGGER)
 
+########################
+# Retrieve credentials #
+########################
 API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
 auth_header = {"Authorization": f"{API_KEY}"}
 
+########################
+# Set up the websocket #
+########################
 ws = websocket.WebSocketApp(
-    f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}",
-    header=auth_header,
-    on_message=on_message,
-    on_error=lambda ws, err: print(err, file=sys.stderr),
-    on_close=on_close,
-    on_open=on_open)
+        f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}",
+        header=auth_header,
+        on_message=on_message,
+        on_error=lambda ws, err: print(err, file=_LOG_PATHNAME),
+        on_close=on_close,
+        on_open=on_open)
 
+#################################
+# Create and start audio stream #
+#################################
+
+# Silence a bunch of errors coming from instansiating PyAudio
+_stderr = sys.stderr
+sys.stderr = open(r'/dev/null', 'w')
+
+p = pyaudio.PyAudio()
+
+sys.stderr.close()
+sys.stderr = _stderr
+
+stream = p.open(
+    format=FORMAT,
+    channels=CHANNELS,
+    rate=SAMPLE_RATE,
+    input=True,
+    frames_per_buffer=FRAMES_PER_BUFFER,
+    input_device_index=PIPEWIRE_DEVICE_INDEX,
+    stream_callback=pyaudio_callback)
 
 #############################################################################
 # Run until the program receives SIGINT, in which case it gracefully exists #
 #############################################################################
-ws.run_forever()
 
-print("All sessions terminated and resources cleaned up", file=sys.stderr)
+with open('logs/stt.log', 'w') as _logger:
+    _LOGGER = _logger
+    ec = ws.run_forever()
+
+exit(ec)
