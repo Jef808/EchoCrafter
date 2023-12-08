@@ -10,21 +10,22 @@ import base64
 import pyaudio
 import json
 import os
-import io
 import time
 import sys
 import signal
-from datetime import datetime
+from contextlib import closing
 
-#
+p = pyaudio.PyAudio()
 ##################
 # # Audio config #
 ##################
-SAMPLE_RATE = 16000
-FRAMES_PER_BUFFER = 3200
+PIPEWIRE_DEVICE_INDEX = 7
+DEFAULT_DEVICE = p.get_default_input_device_info()
+DEFAULT_DEVICE_INDEX = DEFAULT_DEVICE['index']
+SAMPLE_RATE = int(DEFAULT_DEVICE['defaultSampleRate']) #16000
+FRAMES_PER_BUFFER = 9600 #3200
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-PIPEWIRE_DEVICE_INDEX = 7
 ##############################
 # # Termination logic config #
 ##############################
@@ -50,15 +51,37 @@ _WEBSOCKET_TO_PYAUDIO_CLOCK_DIFF = None
 
 # We use the following two to compute the above
 _PYAUDIO_TO_CLOCK_DIFF = None
-_WEBSOCKET_TO_CLOCK_DIFF = None
 
 # Buffers to store audio data and transcription results
 WEB_SOCKET_IS_LOADING_BUFFER = []
-FINAL_TRANSCRIPTS = []
-LAST_PARTIAL_TRANSCRIPT = None
 
-_LOGGER = None
+
+class Logger:
+    def __init__(self):
+        self._logger = None
+        self._buffer = []
+
+    def close(self):
+        self._logger.close()
+
+    def setup(self, filepath):
+        self._logger = open(filepath, 'w+')
+        for message in self._buffer:
+            self._logger.write(message)
+        self._buffer = []
+
+    def write(self, message):
+        if isinstance(message, dict):
+            message = json.dumps(message)
+        if self._logger is None:
+            self._buffer.append(message)
+        else:
+            self._logger.write(message)
+
+
+_LOGGER = Logger()
 ws = None
+FINAL_TRANSCRIPTS = []
 
 # Set up the signal handler responsible for terminating the program at the end
 def signal_handler(sig, frame):
@@ -78,6 +101,15 @@ def send_data(ws, in_data, frame_count, pyaudio_buffer_time, pyaudio_current_tim
 
     json_data = json.dumps(data)
 
+    if _WEBSOCKET_CONNECTION_TIME is None:
+        WEB_SOCKET_IS_LOADING_BUFFER.append(json_data)
+        return
+
+    if len(WEB_SOCKET_IS_LOADING_BUFFER) > 0:
+        for data in WEB_SOCKET_IS_LOADING_BUFFER:
+            ws.send(data)
+        WEB_SOCKET_IS_LOADING_BUFFER = []
+
     log_data = {
         "source": "PYAUDIO",
         "frame_count": frame_count,
@@ -87,16 +119,7 @@ def send_data(ws, in_data, frame_count, pyaudio_buffer_time, pyaudio_current_tim
     }
 
     # Print all data for logging
-    print(log_data, file=_LOGGER)
-
-    if _WEBSOCKET_CONNECTION_TIME is None:
-        WEB_SOCKET_IS_LOADING_BUFFER.append(json_data)
-        return
-
-    elif len(WEB_SOCKET_IS_LOADING_BUFFER) > 0:
-        for data in WEB_SOCKET_IS_LOADING_BUFFER:
-            ws.send(json_data)
-        WEB_SOCKET_IS_LOADING_BUFFER = []
+    _LOGGER.write(log_data)
 
     ws.send(json_data)
 
@@ -127,14 +150,13 @@ def pyaudio_callback(in_data, frame_count, time_info, status):
 #################################
 # Create and start audio stream #
 #################################
-p = pyaudio.PyAudio()
 stream = p.open(
     format=FORMAT,
     channels=CHANNELS,
     rate=SAMPLE_RATE,
     input=True,
     frames_per_buffer=FRAMES_PER_BUFFER,
-    input_device_index=PIPEWIRE_DEVICE_INDEX,
+    input_device_index=DEFAULT_DEVICE_INDEX,
     stream_callback=pyaudio_callback)
 
 _SESSION_START_TIME = time.time()
@@ -146,7 +168,7 @@ _SESSION_START_TIME = time.time()
 def on_open(ws):
     global _WEBSOCKET_CONNECTION_TIME
     _WEBSOCKET_CONNECTION_TIME = time.time()
-    print("WEBSOCKET CONNECTION WITH ASSEMBLYAI ESTABLISHED", file=_LOGGER)
+    _LOGGER.write("WEBSOCKET CONNECTION WITH ASSEMBLYAI ESTABLISHED")
 
 def on_close(ws, ec, err):
     try:
@@ -161,38 +183,33 @@ def on_close(ws, ec, err):
 # \]
 # where time.time() and pyaudio.current_time represent the same time point (now)
 def on_message(ws, msg):
-    global LAST_PARTIAL_TRANSCRIPT
     global FINAL_TRANSCRIPTS
     global _WEBSOCKET_SESSION_START_TIME
     global _WEBSOCKET_SESSION_END_TIME
     global _PYAUDIO_TO_WEBSOCKET_DIFF
-    global _WEBSOCKET_TO_CLOCK_DIFF
+    global _LOGGER
 
     payload = json.loads(msg)
     message_type = payload['message_type']
 
     if message_type == 'SessionBegins':
-        fmt = "%Y-%m-%dT%H:%M:%S.%f"
-        time_begin = datetime.strptime(payload['created-at'], fmt)
-        _WEBSOCKET_TO_CLOCK_DIFF = time_begin.timestamp()  # websocket counts time from session begin
-        _PYAUDIO_TO_WEBSOCKET_DIFF = _WEBSOCKET_TO_CLOCK_DIFF - _PYAUDIO_TO_CLOCK_DIFF
-        _SESSION_ID = payload['session-id']
-        _WEBSOCKET_SESSION_START_TIME = time_begin
-        print(payload, file=sys.stderr)
+        _LOGGER.setup(f"logs/{payload['session_id']}.log")
+        _WEBSOCKET_SESSION_START_TIME = time.time()
+        _PYAUDIO_TO_WEBSOCKET_DIFF = _WEBSOCKET_SESSION_START_TIME - _PYAUDIO_TO_CLOCK_DIFF
+        _LOGGER.write(payload)
 
     elif message_type == 'PartialTranscript':
-        LAST_PARTIAL_TRANSCRIPT = payload
+        _LOGGER.write(payload)
 
     elif message_type == 'FinalTranscript':
         FINAL_TRANSCRIPTS.append(payload)
-        LAST_PARTIAL_TRANSCRIPT = None
-        print(payload, file=sys.stderr)
+        _LOGGER.write(payload)
 
     elif message_type == "SessionTerminated":
         _WEBSOCKET_SESSION_END_TIME = time.time()
         ws.close()
 
-    print(json.dumps({"source": "ASSEMBLYAI", **payload}), file=_LOGGER)
+    _LOGGER.write({"source": "ASSEMBLYAI", **payload})
 
 ########################
 # Retrieve credentials #
@@ -207,7 +224,7 @@ ws = websocket.WebSocketApp(
         f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}",
         header=auth_header,
         on_message=on_message,
-        on_error=lambda ws, err: print(err, file=_LOGGER),
+        on_error=lambda ws, err: _LOGGER.write(err),
         on_close=on_close,
         on_open=on_open)
 
@@ -215,14 +232,8 @@ ws = websocket.WebSocketApp(
 # Run until the program receives SIGINT, in which case it gracefully exists #
 #############################################################################
 
-with open('logs/stt.log', 'w') as _LOGGER:
+with closing(_LOGGER):
     ec = ws.run_forever()
-
-print('\n'.join(json.dumps(transcript) for transcript in FINAL_TRANSCRIPTS))
-if LAST_PARTIAL_TRANSCRIPT and LAST_PARTIAL_TRANSCRIPT['text']:
-    print(json.dumps(LAST_PARTIAL_TRANSCRIPT))
-
-print("\n\n\n    ")
-print(' '.join(transcript['text'] for transcript in FINAL_TRANSCRIPTS))
+    print(' '.join(transcript['text'] for transcript in FINAL_TRANSCRIPTS))
 
 exit(ec)
