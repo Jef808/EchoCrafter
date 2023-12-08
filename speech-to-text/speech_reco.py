@@ -13,7 +13,7 @@ import os
 import time
 import sys
 import signal
-import threading
+import wave
 from contextlib import closing
 
 p = pyaudio.PyAudio()
@@ -68,7 +68,9 @@ WEB_SOCKET_IS_CONNECTING_BUFFER = []
 class Logger:
     def __init__(self):
         self._logger = None
+        self._wav_file = None
         self._buffer = []
+        self._wav_buffer = []
         self._start = time.time()
         self.write(f"SESSION START: {time.time()}")
 
@@ -76,15 +78,23 @@ class Logger:
         self.write(f"SESSION END: {time.time()}\n")
         if self._logger is not None:
             self._logger.close()
-        elif len(self._buffer) > 0:
+        if self._wav_file is not None:
+            self._wav_file.close()
+        if len(self._buffer) > 0 or len(self._wav_buffer) > 0:
             print("WARNING: closing buffer with non empty buffer", file=sys.stderr)
 
     def setup(self, filepath):
-        self._logger = open(filepath, 'w+')
-        self.write(f"START: {self._start}")
+        self._logger = open(f"{filepath}.log", 'w+')
+        self._wav_file = wave.open(f"{filepath}.wav", 'wb')
+        self._wav_file.setnchannels(1)
+        self._wav_file.setsampwidth(2)
+        self._wav_file.setframerate(SAMPLE_RATE)
         for message in self._buffer:
             self.write(message)
         self._buffer = []
+        for data in self._buffer:
+            self.record(data)
+        self._wav_buffer = []
 
     def write(self, message):
         if not isinstance(message, str):
@@ -93,6 +103,12 @@ class Logger:
             self._buffer.append(message)
         else:
             self._logger.write(message + '\n')
+
+    def record(self, data):
+        if self._wav_file is None:
+            self._wav_buffer.append(data)
+        else:
+            self._wav_file.writeframes(data)
 
 
 _LOGGER = Logger()
@@ -112,9 +128,9 @@ def signal_handler(sig, frame):
     if ws is not None:
         try:
             ws.send(json.dumps({"terminate_session": True}))
-        except Exception e:
+        except Exception as e:
             print("Error while sending terminate_session: {e}", file=sys.stderr)
-            p.terminate()n
+            p.terminate()
 
 # Register the signal handler
 signal.signal(signal.SIGINT, signal_handler)
@@ -139,6 +155,7 @@ def send_data(ws, in_data, frame_count, pyaudio_buffer_time, pyaudio_current_tim
 
     # Print all data for logging
     _LOGGER.write(log_data)
+    _LOGGER.record(in_data)
 
     if _AAI_SESSION_START_TIME is None:
         WEB_SOCKET_IS_CONNECTING_BUFFER.append(json_data)
