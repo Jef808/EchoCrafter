@@ -13,17 +13,18 @@ import os
 import time
 import sys
 import signal
+import threading
 from contextlib import closing
 
 p = pyaudio.PyAudio()
 ##################
 # # Audio config #
 ##################
-PIPEWIRE_DEVICE_INDEX = 7
+#PIPEWIRE_DEVICE_INDEX = 7
 DEFAULT_DEVICE = p.get_default_input_device_info()
 DEFAULT_DEVICE_INDEX = DEFAULT_DEVICE['index']
-SAMPLE_RATE = int(DEFAULT_DEVICE['defaultSampleRate']) #16000
-FRAMES_PER_BUFFER = 9600 #3200
+SAMPLE_RATE = 16000 # int(DEFAULT_DEVICE['defaultSampleRate']) #16000
+FRAMES_PER_BUFFER = SAMPLE_RATE // 5 #3200
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 ##############################
@@ -31,52 +32,67 @@ CHANNELS = 1
 ##############################
 
 # Time when recording starts
-_SESSION_START_TIME = None
+_PYAUDIO_START_TIME = None
 
 # Time when recording stops
-_SESSION_END_TIME = None
+_PYAUDIO_END_TIME = None
 
-# Time when websocket's connection is established
-_WEBSOCKET_CONNECTION_TIME = None
+_SHOULD_BE_RUNNING = True
+
+# When the websocket connection is initiated
+_AAI_SESSSION_START_REQUEST_TIME = None
 
 # Time when assemblyAI considers the session to start
-_WEBSOCKET_SESSION_START_TIME = None
+_AAI_SESSION_START_TIME = None
 
-# Time when assemblyAI considers the session over
-_WEBSOCKET_SESSION_END_TIME = None
+# When the terminate_session message was sent
+_AAI_SESSION_END_REQUEST_TIME = None
+
+# Number of seconds to wait before closing websocket
+_AAI_SESSION_END_TIMEOUT = 5
+
+# Time when assemblyAI answers with a SessionTerminated message
+_AAI_SESSION_END_TIME = None
 
 # They both report time differently, so we compute the difference
 # and store it here in order to work with normalized timestamps.
-_WEBSOCKET_TO_PYAUDIO_CLOCK_DIFF = None
+#_WEBSOCKET_TO_PYAUDIO_CLOCK_DIFF = None
 
 # We use the following two to compute the above
-_PYAUDIO_TO_CLOCK_DIFF = None
+#_PYAUDIO_TO_CLOCK_DIFF = None
 
 # Buffers to store audio data and transcription results
-WEB_SOCKET_IS_LOADING_BUFFER = []
+WEB_SOCKET_IS_CONNECTING_BUFFER = []
 
 
 class Logger:
     def __init__(self):
         self._logger = None
         self._buffer = []
+        self._start = time.time()
+        self.write(f"SESSION START: {time.time()}")
 
     def close(self):
-        self._logger.close()
+        self.write(f"SESSION END: {time.time()}\n")
+        if self._logger is not None:
+            self._logger.close()
+        elif len(self._buffer) > 0:
+            print("WARNING: closing buffer with non empty buffer", file=sys.stderr)
 
     def setup(self, filepath):
         self._logger = open(filepath, 'w+')
+        self.write(f"START: {self._start}")
         for message in self._buffer:
-            self._logger.write(message)
+            self.write(message)
         self._buffer = []
 
     def write(self, message):
-        if isinstance(message, dict):
+        if not isinstance(message, str):
             message = json.dumps(message)
         if self._logger is None:
             self._buffer.append(message)
         else:
-            self._logger.write(message)
+            self._logger.write(message + '\n')
 
 
 _LOGGER = Logger()
@@ -85,8 +101,20 @@ FINAL_TRANSCRIPTS = []
 
 # Set up the signal handler responsible for terminating the program at the end
 def signal_handler(sig, frame):
-    global _SESSION_END_TIME
-    _SESSION_END_TIME = time.time()
+    #global _PYAUDIO_END_TIME
+    global _SHOULD_BE_RUNNING
+    global _AAI_SESSION_END_REQUEST_TIME
+
+    #_PYAUDIO_END_TIME = time.time()
+    _SHOULD_BE_RUNNING = False
+    print("Sending terminate_session to aai", file=sys.stderr)
+    _AAI_SESSION_END_REQUEST_TIME = time.time()
+    if ws is not None:
+        try:
+            ws.send(json.dumps({"terminate_session": True}))
+        except Exception e:
+            print("Error while sending terminate_session: {e}", file=sys.stderr)
+            p.terminate()n
 
 # Register the signal handler
 signal.signal(signal.SIGINT, signal_handler)
@@ -95,20 +123,11 @@ signal.signal(signal.SIGINT, signal_handler)
 # NOTE: We will never send data to a websocket before it is ready since
 # the stream is started in the websocket's on_open callback.
 def send_data(ws, in_data, frame_count, pyaudio_buffer_time, pyaudio_current_time, current_time):
-    global WEB_SOCKET_IS_LOADING_BUFFER
+    global WEB_SOCKET_IS_CONNECTING_BUFFER
 
     data = {"audio_data": base64.b64encode(in_data).decode("utf-8")}
 
     json_data = json.dumps(data)
-
-    if _WEBSOCKET_CONNECTION_TIME is None:
-        WEB_SOCKET_IS_LOADING_BUFFER.append(json_data)
-        return
-
-    if len(WEB_SOCKET_IS_LOADING_BUFFER) > 0:
-        for data in WEB_SOCKET_IS_LOADING_BUFFER:
-            ws.send(data)
-        WEB_SOCKET_IS_LOADING_BUFFER = []
 
     log_data = {
         "source": "PYAUDIO",
@@ -121,56 +140,42 @@ def send_data(ws, in_data, frame_count, pyaudio_buffer_time, pyaudio_current_tim
     # Print all data for logging
     _LOGGER.write(log_data)
 
+    if _AAI_SESSION_START_TIME is None:
+        WEB_SOCKET_IS_CONNECTING_BUFFER.append(json_data)
+        return
+
+    if len(WEB_SOCKET_IS_CONNECTING_BUFFER) > 0:
+        for data in WEB_SOCKET_IS_CONNECTING_BUFFER:
+            ws.send(data)
+        WEB_SOCKET_IS_CONNECTING_BUFFER = []
+
     ws.send(json_data)
 
 # This callback is used by pyaudio's stream to handle the collected
 # audio data. It runs in a separate thread.
 def pyaudio_callback(in_data, frame_count, time_info, status):
-    global _PYAUDIO_TO_CLOCK_DIFF
-
-    if _PYAUDIO_TO_CLOCK_DIFF is None:
-        _PYAUDIO_TO_CLOCK_DIFF = time.time() - float(time_info['current_time'])
-
-    pyaudio_buffer_time = float(time_info['input_buffer_adc_time']) + _PYAUDIO_TO_CLOCK_DIFF
-    pyaudio_current_time = float(time_info['current_time']) + _PYAUDIO_TO_CLOCK_DIFF
     current_time = time.time()
+    pyaudio_buffer_time = time_info['input_buffer_adc_time']#) + _PYAUDIO_TO_CLOCK_DIFF
+    pyaudio_current_time = time_info['current_time']#) + _PYAUDIO_TO_CLOCK_DIFF
 
     send_data(ws, in_data, frame_count, pyaudio_buffer_time, pyaudio_current_time, current_time)
 
-    if _SESSION_END_TIME is not None:
-        # At the end of a session, process audio frames until timestamp
-        # is past the session end time, then close websocket
-        if pyaudio_buffer_time > _SESSION_END_TIME:
-            ws.send(json.dumps({"terminate_session": True}))
-            return (None, pyaudio.paComplete)
+    if not _SHOULD_BE_RUNNING:
+        return (None, pyaudio.paComplete)
 
     return (None, pyaudio.paContinue)
-
-
-#################################
-# Create and start audio stream #
-#################################
-stream = p.open(
-    format=FORMAT,
-    channels=CHANNELS,
-    rate=SAMPLE_RATE,
-    input=True,
-    frames_per_buffer=FRAMES_PER_BUFFER,
-    input_device_index=DEFAULT_DEVICE_INDEX,
-    stream_callback=pyaudio_callback)
-
-_SESSION_START_TIME = time.time()
 
 
 #################################################################
 # Setup the websocket connecting to the assemblyAI api endpoint #
 #################################################################
 def on_open(ws):
-    global _WEBSOCKET_CONNECTION_TIME
-    _WEBSOCKET_CONNECTION_TIME = time.time()
-    _LOGGER.write("WEBSOCKET CONNECTION WITH ASSEMBLYAI ESTABLISHED")
+    global _AAI_SESSSION_BEGIN_TIME
+
+    _AAI_SESSSION_BEGIN_TIME = time.time()
 
 def on_close(ws, ec, err):
+    print("closing websocket connection", file=sys.stderr)
     try:
         if not stream.is_stopped(): stream.stop_stream()
     finally:
@@ -183,33 +188,24 @@ def on_close(ws, ec, err):
 # \]
 # where time.time() and pyaudio.current_time represent the same time point (now)
 def on_message(ws, msg):
-    global FINAL_TRANSCRIPTS
-    global _WEBSOCKET_SESSION_START_TIME
-    global _WEBSOCKET_SESSION_END_TIME
-    global _PYAUDIO_TO_WEBSOCKET_DIFF
-    global _LOGGER
+    global _AAI_SESSION_START_TIME
+    global _AAI_SESSION_END_TIME
 
     payload = json.loads(msg)
     message_type = payload['message_type']
 
-    if message_type == 'SessionBegins':
-        _LOGGER.setup(f"logs/{payload['session_id']}.log")
-        _WEBSOCKET_SESSION_START_TIME = time.time()
-        _PYAUDIO_TO_WEBSOCKET_DIFF = _WEBSOCKET_SESSION_START_TIME - _PYAUDIO_TO_CLOCK_DIFF
-        _LOGGER.write(payload)
+    _LOGGER.write({"source": "ASSEMBLYAI", **payload})
 
-    elif message_type == 'PartialTranscript':
-        _LOGGER.write(payload)
+    if message_type == 'SessionBegins':
+        _AAI_SESSION_START_TIME = time.time()
+        _LOGGER.setup(f"logs/{payload['session_id']}.log")
 
     elif message_type == 'FinalTranscript':
         FINAL_TRANSCRIPTS.append(payload)
-        _LOGGER.write(payload)
 
     elif message_type == "SessionTerminated":
-        _WEBSOCKET_SESSION_END_TIME = time.time()
+        _AAI_SESSION_END_TIME = time.time()
         ws.close()
-
-    _LOGGER.write({"source": "ASSEMBLYAI", **payload})
 
 ########################
 # Retrieve credentials #
@@ -217,23 +213,63 @@ def on_message(ws, msg):
 API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
 auth_header = {"Authorization": f"{API_KEY}"}
 
+if not API_KEY:
+    print("ERROR: Failed to retrieve ASSEMBLYAI_API_KEY env variable", file=sys.stderr)
+    p.terminate()
+    sys.exit(1)
+
+#################################
+# Create and start audio stream #
+#################################
+try:
+    stream = p.open(
+        format=FORMAT,
+        channels=CHANNELS,
+        rate=SAMPLE_RATE,
+        input=True,
+        frames_per_buffer=FRAMES_PER_BUFFER,
+        input_device_index=DEFAULT_DEVICE_INDEX,
+        stream_callback=pyaudio_callback)
+except Exception as e:
+    print(f"Error while opening the pyaudio stream: {e}", file=sys.stderr)
+    p.terminate()
+    sys.exit(2)
+
+_PYAUDIO_START_TIME = time.time()
+
+
+def on_error(ws, *err):
+    _LOGGER.write(*err)
+    print(f"Error: {err}", file=sys.stderr)
 ########################
 # Set up the websocket #
 ########################
-ws = websocket.WebSocketApp(
+try:
+    ws = websocket.WebSocketApp(
         f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}",
         header=auth_header,
         on_message=on_message,
-        on_error=lambda ws, err: _LOGGER.write(err),
+        on_error=on_error,
         on_close=on_close,
         on_open=on_open)
+except Exception as e:
+    print(f"Error while initiating the websocket: {e}")
+    stream.close()
+    p.terminate()
 
 #############################################################################
 # Run until the program receives SIGINT, in which case it gracefully exists #
 #############################################################################
 
 with closing(_LOGGER):
+    _AAI_SESSION_START_REQUEST_TIME = time.time()
     ec = ws.run_forever()
     print(' '.join(transcript['text'] for transcript in FINAL_TRANSCRIPTS))
+    _LOGGER.write("\n**** SUMMARY *****\n"
+                  f"SESSION_START: {_PYAUDIO_START_TIME}\n"
+                  f"_AAI_SESSION_REQUEST: {_AAI_SESSION_START_REQUEST_TIME}\n"
+                  f"_AAI_SESSION_START: {_AAI_SESSION_START_TIME}\n"
+                  f"_AAI_SESSION_END_REQUEST: {_AAI_SESSION_END_REQUEST_TIME}\n"
+                  f"_AAI_SESSION_END: {_AAI_SESSION_END_TIME}\n")
 
-exit(ec)
+sys.exit(ec)
