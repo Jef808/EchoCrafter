@@ -15,7 +15,6 @@ import sys
 import signal
 import wave
 import requests
-from openai import OpenAI
 from contextlib import closing
 
 p = pyaudio.PyAudio()
@@ -25,8 +24,9 @@ p = pyaudio.PyAudio()
 #PIPEWIRE_DEVICE_INDEX = 7
 DEFAULT_DEVICE = p.get_default_input_device_info()
 DEFAULT_DEVICE_INDEX = DEFAULT_DEVICE['index']
-SAMPLE_RATE = 16000 # int(DEFAULT_DEVICE['defaultSampleRate']) #16000
-FRAMES_PER_BUFFER = SAMPLE_RATE // 5 #3200
+SAMPLE_RATE = 16000 # int(DEFAULT_DEVICE['defaultSampleRate'])
+FRAMES_PER_BUFFER = SAMPLE_RATE // 5 # 3200
+LATENCY = FRAMES_PER_BUFFER / SAMPLE_RATE
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 ##############################
@@ -129,6 +129,7 @@ def signal_handler(sig, frame):
     _AAI_SESSION_END_REQUEST_TIME = time.time()
     if ws is not None:
         try:
+            time.sleep(FRAMES_PER_BUFFER / SAMPLE_RATE)
             ws.send(json.dumps({"terminate_session": True}))
         except Exception as e:
             print("Error while sending terminate_session: {e}", file=sys.stderr)
@@ -173,9 +174,15 @@ def send_data(ws, in_data, frame_count, pyaudio_buffer_time, pyaudio_current_tim
 # This callback is used by pyaudio's stream to handle the collected
 # audio data. It runs in a separate thread.
 def pyaudio_callback(in_data, frame_count, time_info, status):
+    global _PYAUDIO_START_TIME
+
     current_time = time.time()
     pyaudio_buffer_time = time_info['input_buffer_adc_time']#) + _PYAUDIO_TO_CLOCK_DIFF
     pyaudio_current_time = time_info['current_time']#) + _PYAUDIO_TO_CLOCK_DIFF
+
+    if _PYAUDIO_START_TIME is None:
+        _PYAUDIO_START_TIME = current_time
+        print("microphone listening...", file=sys.stderr)
 
     send_data(ws, in_data, frame_count, pyaudio_buffer_time, pyaudio_current_time, current_time)
 
@@ -232,8 +239,6 @@ def on_message(ws, msg):
 ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
 auth_header = {"Authorization": f"{ASSEMBLYAI_API_KEY}"}
 
-openai_client = OpenAI()
-
 if not ASSEMBLYAI_API_KEY:
     print("ERROR: Failed to retrieve ASSEMBLYAI_API_KEY env variable", file=sys.stderr)
     p.terminate()
@@ -255,8 +260,6 @@ except Exception as e:
     print(f"Error while opening the pyaudio stream: {e}", file=sys.stderr)
     p.terminate()
     sys.exit(2)
-
-_PYAUDIO_START_TIME = time.time()
 
 def on_error(ws, *err):
     _LOGGER.write(*err)
@@ -284,6 +287,7 @@ except Exception as e:
 with closing(_LOGGER):
     _AAI_SESSION_START_REQUEST_TIME = time.time()
     ec = ws.run_forever()
+
     _LOGGER.write("{SUMMARY: "
                   f"SESSION_START: {_PYAUDIO_START_TIME}, "
                   f"AAI_SESSION_REQUEST: {_AAI_SESSION_START_REQUEST_TIME}, "
@@ -291,27 +295,10 @@ with closing(_LOGGER):
                   f"AAI_SESSION_END_REQUEST: {_AAI_SESSION_END_REQUEST_TIME}, "
                   f"AAI_SESSION_END: {_AAI_SESSION_END_TIME}"
                   "}")
-
     transcript = ' '.join(transcript['text'] for transcript in FINAL_TRANSCRIPTS)
-    FINAL_TRANSCRIPTS = []
 
-    # openai api call
-    payload = {
-        "model": "gpt-3.5-turbo",
-        "messages": [
-            {"role": "system", "content": "The prompt is generated from an assemblyAI real-time transcript. Preprocess it and use what you get as if it was the original prompt"},
-            {"role": "user", "content": transcript}
-        ]
-    }
     _LOGGER.write(json.dumps({"transcript": transcript}))
 
-    response = openai_client.chat.completions.create(**payload)
-    _LOGGER.write(json.dumps({"openai_response": response.model_dump_json()}))
-
-    py_response = response.model_dump()
-
-    content = py_response['choices'][0]['message']['content']
-
-    print(content)
+    print(transcript)
 
 sys.exit(ec)
