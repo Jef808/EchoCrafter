@@ -14,6 +14,8 @@ import time
 import sys
 import signal
 import wave
+import requests
+from openai import OpenAI
 from contextlib import closing
 
 p = pyaudio.PyAudio()
@@ -215,7 +217,7 @@ def on_message(ws, msg):
 
     if message_type == 'SessionBegins':
         _AAI_SESSION_START_TIME = time.time()
-        _LOGGER.setup(f"logs/{payload['session_id']}.log")
+        _LOGGER.setup(f"logs/{payload['session_id']}")
 
     elif message_type == 'FinalTranscript':
         FINAL_TRANSCRIPTS.append(payload)
@@ -227,10 +229,12 @@ def on_message(ws, msg):
 ########################
 # Retrieve credentials #
 ########################
-API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
-auth_header = {"Authorization": f"{API_KEY}"}
+ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
+auth_header = {"Authorization": f"{ASSEMBLYAI_API_KEY}"}
 
-if not API_KEY:
+openai_client = OpenAI()
+
+if not ASSEMBLYAI_API_KEY:
     print("ERROR: Failed to retrieve ASSEMBLYAI_API_KEY env variable", file=sys.stderr)
     p.terminate()
     sys.exit(1)
@@ -254,7 +258,6 @@ except Exception as e:
 
 _PYAUDIO_START_TIME = time.time()
 
-
 def on_error(ws, *err):
     _LOGGER.write(*err)
     print(f"Error: {err}", file=sys.stderr)
@@ -270,7 +273,7 @@ try:
         on_close=on_close,
         on_open=on_open)
 except Exception as e:
-    print(f"Error while initiating the websocket: {e}")
+    print(f"Error while initiating the websocket: {e}", file=sys.stderr)
     stream.close()
     p.terminate()
 
@@ -281,12 +284,34 @@ except Exception as e:
 with closing(_LOGGER):
     _AAI_SESSION_START_REQUEST_TIME = time.time()
     ec = ws.run_forever()
-    print(' '.join(transcript['text'] for transcript in FINAL_TRANSCRIPTS))
-    _LOGGER.write("\n**** SUMMARY *****\n"
-                  f"SESSION_START: {_PYAUDIO_START_TIME}\n"
-                  f"_AAI_SESSION_REQUEST: {_AAI_SESSION_START_REQUEST_TIME}\n"
-                  f"_AAI_SESSION_START: {_AAI_SESSION_START_TIME}\n"
-                  f"_AAI_SESSION_END_REQUEST: {_AAI_SESSION_END_REQUEST_TIME}\n"
-                  f"_AAI_SESSION_END: {_AAI_SESSION_END_TIME}\n")
+    _LOGGER.write("{SUMMARY: "
+                  f"SESSION_START: {_PYAUDIO_START_TIME}, "
+                  f"AAI_SESSION_REQUEST: {_AAI_SESSION_START_REQUEST_TIME}, "
+                  f"AAI_SESSION_START: {_AAI_SESSION_START_TIME}, "
+                  f"AAI_SESSION_END_REQUEST: {_AAI_SESSION_END_REQUEST_TIME}, "
+                  f"AAI_SESSION_END: {_AAI_SESSION_END_TIME}"
+                  "}")
+
+    transcript = ' '.join(transcript['text'] for transcript in FINAL_TRANSCRIPTS)
+    FINAL_TRANSCRIPTS = []
+
+    # openai api call
+    payload = {
+        "model": "gpt-3.5-turbo",
+        "messages": [
+            {"role": "system", "content": "The prompt is generated from an assemblyAI real-time transcript. Preprocess it and use what you get as if it was the original prompt"},
+            {"role": "user", "content": transcript}
+        ]
+    }
+    _LOGGER.write(json.dumps({"transcript": transcript}))
+
+    response = openai_client.chat.completions.create(**payload)
+    _LOGGER.write(json.dumps({"openai_response": response.model_dump_json()}))
+
+    py_response = response.model_dump()
+
+    content = py_response['choices'][0]['message']['content']
+
+    print(content)
 
 sys.exit(ec)
