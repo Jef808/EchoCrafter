@@ -25,10 +25,11 @@ p = pyaudio.PyAudio()
 DEFAULT_DEVICE = p.get_default_input_device_info()
 DEFAULT_DEVICE_INDEX = DEFAULT_DEVICE['index']
 SAMPLE_RATE = 16000 # int(DEFAULT_DEVICE['defaultSampleRate'])
-FRAMES_PER_BUFFER = SAMPLE_RATE // 5 # 3200
+FRAMES_PER_BUFFER = int(SAMPLE_RATE / 2) # 3200
 LATENCY = FRAMES_PER_BUFFER / SAMPLE_RATE
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
+
 ##############################
 # # Termination logic config #
 ##############################
@@ -94,7 +95,7 @@ class Logger:
         for message in self._buffer:
             self.write(message)
         self._buffer = []
-        for data in self._buffer:
+        for data in self._wav_buffer:
             self.record(data)
         self._wav_buffer = []
 
@@ -115,7 +116,8 @@ class Logger:
 
 _LOGGER = Logger()
 ws = None
-FINAL_TRANSCRIPTS = []
+PARTIAL_TRANSCRIPT = ""
+TRANSCRIPT = []
 
 # Set up the signal handler responsible for terminating the program at the end
 def signal_handler(sig, frame):
@@ -123,16 +125,16 @@ def signal_handler(sig, frame):
     global _SHOULD_BE_RUNNING
     global _AAI_SESSION_END_REQUEST_TIME
 
-    #_PYAUDIO_END_TIME = time.time()
+    time.sleep(0.5)
     _SHOULD_BE_RUNNING = False
     print("Sending terminate_session to aai", file=sys.stderr)
+
     _AAI_SESSION_END_REQUEST_TIME = time.time()
     if ws is not None:
         try:
-            time.sleep(FRAMES_PER_BUFFER / SAMPLE_RATE)
             ws.send(json.dumps({"terminate_session": True}))
         except Exception as e:
-            print("Error while sending terminate_session: {e}", file=sys.stderr)
+            print(f"Error while sending terminate_session: {e}", file=sys.stderr)
             p.terminate()
 
 # Register the signal handler
@@ -157,7 +159,7 @@ def send_data(ws, in_data, frame_count, pyaudio_buffer_time, pyaudio_current_tim
     }
 
     # Print all data for logging
-    _LOGGER.write(log_data)
+    # _LOGGER.write(log_data)
     _LOGGER.record(in_data)
 
     if _AAI_SESSION_START_TIME is None:
@@ -197,14 +199,13 @@ def pyaudio_callback(in_data, frame_count, time_info, status):
 #################################################################
 def on_open(ws):
     global _AAI_SESSSION_BEGIN_TIME
-
     _AAI_SESSSION_BEGIN_TIME = time.time()
 
 def on_close(ws, ec, err):
     print("closing websocket connection", file=sys.stderr)
-    try:
-        if not stream.is_stopped(): stream.stop_stream()
-    finally:
+    if PARTIAL_TRANSCRIPT:
+        TRANSCRIPT.append(PARTIAL_TRANSCRIPT)
+    if not stream.is_stopped():
         stream.close()
         p.terminate()
 
@@ -216,22 +217,54 @@ def on_close(ws, ec, err):
 def on_message(ws, msg):
     global _AAI_SESSION_START_TIME
     global _AAI_SESSION_END_TIME
+    global PARTIAL_TRANSCRIPT
 
     payload = json.loads(msg)
     message_type = payload['message_type']
 
-    _LOGGER.write({"source": "ASSEMBLYAI", **payload})
-
     if message_type == 'SessionBegins':
         _AAI_SESSION_START_TIME = time.time()
         _LOGGER.setup(f"/home/jfa/projects/echo-crafter/logs/{payload['session_id']}")
+        return
 
-    elif message_type == 'FinalTranscript':
-        FINAL_TRANSCRIPTS.append(payload)
+    if message_type == 'SessionTerminated':
+        if _AAI_SESSION_END_TIME is not None:
+            _AAI_SESSION_END_TIME = time.time()
+            ws.close()
 
-    elif message_type == "SessionTerminated":
-        _AAI_SESSION_END_TIME = time.time()
-        ws.close()
+    text = payload['text']
+
+    if not text:
+        return
+
+    # elif message_type == "SessionTerminated":
+    #     _AAI_SESSION_END_TIME = time.time()
+    #     ws.close()
+    #     return
+
+    if message_type == "FinalTranscript":
+        _LOGGER.write({"FINAL_TRANSCRIPT": text, "created": payload['created']})
+        if PARTIAL_TRANSCRIPT:
+            TRANSCRIPT.append(PARTIAL_TRANSCRIPT)
+        PARTIAL_TRANSCRIPT = ""
+        if _AAI_SESSION_END_REQUEST_TIME is not None:
+            if _AAI_SESSION_END_TIME is None:
+                _AAI_SESSION_END_TIME = time.time()
+                ws.close()
+        return
+
+    elif text == PARTIAL_TRANSCRIPT:
+        TRANSCRIPT.append(text)
+        PARTIAL_TRANSCRIPT = ""
+        if _AAI_SESSION_END_REQUEST_TIME is not None:
+            if _AAI_SESSION_END_TIME is None:
+                _AAI_SESSION_END_TIME = time.time()
+                ws.close()
+
+    else:
+        PARTIAL_TRANSCRIPT = text
+
+    _LOGGER.write({"PARTIAL_TRANSCRIPT": text, "created": payload['created']})
 
 ########################
 # Retrieve credentials #
@@ -259,11 +292,12 @@ try:
 except Exception as e:
     print(f"Error while opening the pyaudio stream: {e}", file=sys.stderr)
     p.terminate()
-    sys.exit(2)
+    sys.exit(7)
 
 def on_error(ws, *err):
     _LOGGER.write(*err)
     print(f"Error: {err}", file=sys.stderr)
+
 ########################
 # Set up the websocket #
 ########################
@@ -277,8 +311,9 @@ try:
         on_open=on_open)
 except Exception as e:
     print(f"Error while initiating the websocket: {e}", file=sys.stderr)
-    stream.close()
-    p.terminate()
+    if not stream.is_stopped():
+        stream.close()
+        p.terminate()
 
 #############################################################################
 # Run until the program receives SIGINT, in which case it gracefully exists #
@@ -288,8 +323,12 @@ with closing(_LOGGER):
     _AAI_SESSION_START_REQUEST_TIME = time.time()
     ec = ws.run_forever()
 
-    time_to_end = _AAI_SESSION_END_TIME - _AAI_SESSION_END_REQUEST_TIME
+    if ec and not stream.is_stopped():
+        stream.close()
+        p.terminate()
 
+    time_to_wrap_up = _AAI_SESSION_END_TIME - _AAI_SESSION_END_REQUEST_TIME
+    transcript = ' '.join(TRANSCRIPT)
     _LOGGER.write("{SUMMARY: "
                   f"SESSION_START: {_PYAUDIO_START_TIME}, "
                   f"AAI_SESSION_REQUEST: {_AAI_SESSION_START_REQUEST_TIME}, "
@@ -297,11 +336,9 @@ with closing(_LOGGER):
                   f"AAI_SESSION_END_REQUEST: {_AAI_SESSION_END_REQUEST_TIME}, "
                   f"AAI_SESSION_END: {_AAI_SESSION_END_TIME}"
                   "}")
-    _LOGGER.write(f"TIME_TO_WRAP_UP: {time_to_end}")
-    transcript = ' '.join(transcript['text'] for transcript in FINAL_TRANSCRIPTS)
-
+    _LOGGER.write(f"TIME_TO_WRAP_UP: {time_to_wrap_up}")
     _LOGGER.write(json.dumps({"transcript": transcript}))
 
     print(transcript)
 
-sys.exit(ec)
+    sys.exit(ec)

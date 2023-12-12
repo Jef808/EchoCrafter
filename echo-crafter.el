@@ -75,7 +75,7 @@
       (process-send-eof process))))
 
 (defun openai-prompt-process-sentinel (process signal)
-  "Handle the process state changes for PROCESS upon receiving SIGNAL."
+  "Handle the process state change for PROCESS upon receiving SIGNAL."
   (when (memq (process-status process) '(exit signal))
     (let ((exit-status (process-exit-status process))
           (transcript-data (with-current-buffer microphone-stream-buffer (buffer-string))))
