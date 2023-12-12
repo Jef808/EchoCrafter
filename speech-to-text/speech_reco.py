@@ -224,7 +224,7 @@ def on_message(ws, msg):
 
     if message_type == 'SessionBegins':
         _AAI_SESSION_START_TIME = time.time()
-        _LOGGER.setup(f"logs/{payload['session_id']}")
+        _LOGGER.setup(f"/home/jfa/projects/echo-crafter/logs/{payload['session_id']}")
 
     elif message_type == 'FinalTranscript':
         FINAL_TRANSCRIPTS.append(payload)
@@ -288,6 +288,8 @@ with closing(_LOGGER):
     _AAI_SESSION_START_REQUEST_TIME = time.time()
     ec = ws.run_forever()
 
+    time_to_end = _AAI_SESSION_END_TIME - _AAI_SESSION_END_REQUEST_TIME
+
     _LOGGER.write("{SUMMARY: "
                   f"SESSION_START: {_PYAUDIO_START_TIME}, "
                   f"AAI_SESSION_REQUEST: {_AAI_SESSION_START_REQUEST_TIME}, "
@@ -295,6 +297,7 @@ with closing(_LOGGER):
                   f"AAI_SESSION_END_REQUEST: {_AAI_SESSION_END_REQUEST_TIME}, "
                   f"AAI_SESSION_END: {_AAI_SESSION_END_TIME}"
                   "}")
+    _LOGGER.write(f"TIME_TO_WRAP_UP: {time_to_end}")
     transcript = ' '.join(transcript['text'] for transcript in FINAL_TRANSCRIPTS)
 
     _LOGGER.write(json.dumps({"transcript": transcript}))

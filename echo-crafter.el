@@ -7,8 +7,8 @@
 ;; Created: December 11, 2023
 ;; Modified: December 11, 2023
 ;; Version: 0.0.1
-;; Keywords: abbrev bib c calendar comm convenience data docs emulations extensions faces files frames games hardware help hypermedia i18n internal languages lisp local maint mail matching mouse multimedia news outlines processes terminals tex tools unix vc wp
-;; Homepage: https://github.com/jfa/echo-crafter
+;; Keywords: data
+;; Homepage: https://github.com/Jef808/EchoCrafter.git
 ;; Package-Requires: ((emacs "24.3"))
 ;;
 ;; This file is not part of GNU Emacs.
@@ -31,19 +31,26 @@
 (defun start-microphone-stream ()
   "Start microphone stream subprocess."
   (interactive)
+  (when (process-live-p microphone-stream)
+    (error "A transcription process is already running"))
   (setq microphone-stream-buffer (generate-new-buffer "*microphone-stream output*"))
   (setq microphone-stream (start-process-shell-command "microphone-stream" microphone-stream-buffer "/home/jfa/projects/echo-crafter/run-speech-reco.sh"))
   (set-process-sentinel microphone-stream 'microphone-stream-sentinel)
-  (message "Listening to microphone stream...")
-  (with-current-buffer (process-buffer microphone-stream)
-    (setq buffer-read-only t)
-    (goto-char (point-min))))
+  (message "Listening to microphone stream..."))
 
 (defun stop-microphone-stream ()
   "Send SIGINT to the microphone stream subprocess."
   (interactive)
   (when (process-live-p microphone-stream)
-    (interrupt-process microphone-stream)))
+    (interrupt-process microphone-stream)
+    (message "Stopped listening to microphone stream...")))
+
+(defun abort-microphone-stream ()
+  "Send SIGKILL to the microphone stream subprocess."
+  (interactive)
+  (when (process-live-p microphone-stream)
+    (kill-process microphone-stream)
+    (message "Speech-to-text process aborted.")))
 
 (defun microphone-stream-sentinel (process signal)
   "Handle PROCESS state change from SIGNAL description."
@@ -95,6 +102,7 @@
         (funcall major-mode-fn)
         (setq-local +popup-window-parameters '((quit . t)))
         (setq-local original-buffer current-original-buffer)
+        (setq buffer-read-only t)
         (local-set-key (kbd "C-x C-e") 'evaluate-last-sexp-in-original-buffer))
       (+popup-buffer buffer))))
 
@@ -107,8 +115,9 @@
           (eval (read last-sexp))))
     (message "Original buffer is no longer available.")))
 
-(global-set-key (kbd "C-c r r") 'start-microphone-stream)
-(global-set-key (kbd "C-c r s") 'stop-microphone-stream)
+(global-set-key (kbd "C-c r s") 'start-microphone-stream)
+(global-set-key (kbd "C-c r q") 'stop-microphone-stream)
+(global-set-key (kbd "C-c r a") 'abort-microphone-stream)
 
 (provide 'echo-crafter)
 ;;; echo-crafter.el ends here

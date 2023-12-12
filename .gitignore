@@ -191,4 +191,4 @@ n# Created by https://www.toptal.com/developers/gitignore/api/elisp
 *.~undo-tree
 
 # End of https://www.toptal.com/developers/gitignore/api/elisp
-nlogs
+logs
