@@ -5,6 +5,7 @@ To terminate the process, use Ctrl-C in the terminal (send SIGINT).
 It is printed to stdout, and any other output of the program is sent to stderr.
 """
 
+import subprocess
 import websocket
 import base64
 import pyaudio
@@ -16,6 +17,18 @@ import signal
 import wave
 import requests
 from contextlib import closing
+import argparse
+
+parser = argparse.ArgumentParser(description='Handle command line arguments')
+parser.add_argument('--input-device', type=int, help='Input device ID')
+parser.add_argument('--sample-rate', type=int, help='Input device sample rate')
+parser.add_argument('--frames-per-buffer', type=int, help='Frames per buffer')
+parser.add_argument('--format', type=str, help='Format of the audio')
+parser.add_argument('--channels', type=int, help='Number of audio channels')
+
+args = parser.parse_args()
+print(args)
+
 
 p = pyaudio.PyAudio()
 ##################
@@ -23,12 +36,15 @@ p = pyaudio.PyAudio()
 ##################
 #PIPEWIRE_DEVICE_INDEX = 7
 DEFAULT_DEVICE = p.get_default_input_device_info()
+
 DEFAULT_DEVICE_INDEX = DEFAULT_DEVICE['index']
-SAMPLE_RATE = 16000 # int(DEFAULT_DEVICE['defaultSampleRate'])
-FRAMES_PER_BUFFER = int(SAMPLE_RATE / 2) # 3200
+SAMPLE_RATE = 16000  # int(DEFAULT_DEVICE['defaultSampleRate'])
+FRAMES_PER_BUFFER = int(SAMPLE_RATE / 2)  # Sync AssemblyAI's throughput of twice a second
 LATENCY = FRAMES_PER_BUFFER / SAMPLE_RATE
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
+
+
 
 ##############################
 # # Termination logic config #
@@ -56,13 +72,6 @@ _AAI_SESSION_END_TIMEOUT = 5
 
 # Time when assemblyAI answers with a SessionTerminated message
 _AAI_SESSION_END_TIME = None
-
-# They both report time differently, so we compute the difference
-# and store it here in order to work with normalized timestamps.
-#_WEBSOCKET_TO_PYAUDIO_CLOCK_DIFF = None
-
-# We use the following two to compute the above
-#_PYAUDIO_TO_CLOCK_DIFF = None
 
 # Buffers to store audio data and transcription results
 WEB_SOCKET_IS_CONNECTING_BUFFER = []
@@ -266,17 +275,6 @@ def on_message(ws, msg):
 
     _LOGGER.write({"PARTIAL_TRANSCRIPT": text, "created": payload['created']})
 
-########################
-# Retrieve credentials #
-########################
-ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
-auth_header = {"Authorization": f"{ASSEMBLYAI_API_KEY}"}
-
-if not ASSEMBLYAI_API_KEY:
-    print("ERROR: Failed to retrieve ASSEMBLYAI_API_KEY env variable", file=sys.stderr)
-    p.terminate()
-    sys.exit(1)
-
 #################################
 # Create and start audio stream #
 #################################
@@ -301,10 +299,19 @@ def on_error(ws, *err):
 ########################
 # Set up the websocket #
 ########################
+def get_api_key():
+    p_api_key = subprocess.run(["pass", "assemblyai.com/api_key"], capture_output=True)
+    if not p_api_key.stdout:
+        print("ERROR: Failed to retrieve assemblyai.com/api_key pass entry", file=sys.stderr)
+        if not stream.is_stopped(): stream.close()
+        p.terminate()
+        sys.exit(3)
+    return str(p_api_key.stdout, encoding="utf-8").strip()
+
 try:
     ws = websocket.WebSocketApp(
         f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}",
-        header=auth_header,
+        header={"Authorization": get_api_key()},
         on_message=on_message,
         on_error=on_error,
         on_close=on_close,
