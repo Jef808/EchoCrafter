@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import subprocess
 import json
 import sys
@@ -41,13 +43,14 @@ payload = {
     "temperature": args.temperature,
 }
 
-print("Sending transcript to openai...", file=sys.stderr)
-response = openai_client.chat.completions.create(**payload)
+if __name__ == '__main__':
+    print("Sending transcript to openai...", file=sys.stderr)
+    response = openai_client.chat.completions.create(**payload)
 
-py_response = response.model_dump()
+    py_response = response.model_dump()
 
-print(json.dumps(py_response, indent=2), file=sys.stderr)
+    print(json.dumps(py_response, indent=2), file=sys.stderr)
 
-content = py_response['choices'][0]['message']['content']
+    content = py_response['choices'][0]['message']['content']
 
-print(content)
+    print(content)
