@@ -29,8 +29,6 @@ parser.add_argument('--format', type=str, help='Format of the audio')
 parser.add_argument('--channels', type=int, help='Number of audio channels')
 
 args = parser.parse_args()
-print(args)
-
 
 p = None
 
@@ -65,6 +63,7 @@ _AAI_SESSION_END_TIME = None
 WEB_SOCKET_IS_CONNECTING_BUFFER = []
 
 ws = None
+stream = None
 RUNNING_PARTIAL_TRANSCRIPT = ""
 TRANSCRIPT = []
 
@@ -114,29 +113,8 @@ class Logger:
             self._wav_file.writeframes(data)
 
 
-_LOGGER = Logger()
-
-# Set up the signal handler responsible for terminating the program at the end
-def signal_handler(sig, frame):
-    #global _PYAUDIO_END_TIME
-    global _SHOULD_BE_RUNNING
-    global _AAI_SESSION_END_REQUEST_TIME
-
-    time.sleep(LATENCY)
-    _SHOULD_BE_RUNNING = False
-    print("Sending terminate_session to aai", file=sys.stderr)
-
-    _AAI_SESSION_END_REQUEST_TIME = time.time()
-    if ws is not None:
-        try:
-            ws.send(json.dumps({"terminate_session": True}))
-        except Exception as e:
-            print(f"Error while sending terminate_session: {e}", file=sys.stderr)
-            p.terminate()
-
-# Register the signal handler
-signal.signal(signal.SIGINT, signal_handler)
-
+#_LOGGER = Logger()
+#
 # Correctly format and send data to both `ws` and `logger` endpoints
 # NOTE: We will never send data to a websocket before it is ready since
 # the stream is started in the websocket's on_open callback.
@@ -157,7 +135,7 @@ def send_data(ws, in_data, frame_count, pyaudio_buffer_time, pyaudio_current_tim
 
     # Print all data for logging
     # _LOGGER.write(log_data)
-    _LOGGER.record(in_data)
+#    _LOGGER.record(in_data)
 
     if _AAI_SESSION_START_TIME is None:
         WEB_SOCKET_IS_CONNECTING_BUFFER.append(json_data)
@@ -200,8 +178,8 @@ def on_open(ws):
 
 def on_close(ws, ec, err):
     print("closing websocket connection", file=sys.stderr)
-    if PARTIAL_TRANSCRIPT:
-        TRANSCRIPT.append(PARTIAL_TRANSCRIPT)
+    if RUNNING_PARTIAL_TRANSCRIPT:
+        TRANSCRIPT.append(RUNNING_PARTIAL_TRANSCRIPT)
     if not stream.is_stopped():
         stream.close()
         p.terminate()
@@ -215,7 +193,7 @@ def handle_on_message(text, message_type, running_partial_transcript):
 
     if message_type == "FinalTranscript":
         if running_partial_transcript:
-            _utterance.append(_running_partial_transcript)
+            _utterance += _running_partial_transcript
         _running_partial_transcript = ""
         if _AAI_SESSION_END_REQUEST_TIME is not None:
             ws.close()
@@ -228,7 +206,7 @@ def handle_on_message(text, message_type, running_partial_transcript):
 
     # If text is the beginning of a new utterance
     else:
-        _utterance.append(_running_partial_transcript)
+        _utterance += _running_partial_transcript
         _running_partial_transcript = text
 
     return _running_partial_transcript, _utterance
@@ -244,7 +222,7 @@ def on_message(ws, msg):
 
     if message_type == 'SessionBegins':
         _AAI_SESSION_START_TIME = time.time()
-        _LOGGER.setup(f"/home/jfa/projects/echo-crafter/logs/{payload['session_id']}")
+#        _LOGGER.setup(f"/home/jfa/projects/echo-crafter/logs/{payload['session_id']}")
         return
 
     if  message_type == 'SessionTerminated':
@@ -259,10 +237,10 @@ def on_message(ws, msg):
     if utterance:
         TRANSCRIPT.append(utterance)
 
-    _LOGGER.write({"PARTIAL_TRANSCRIPT": text, "created": payload['created']})
+#    _LOGGER.write({"RUNNING_PARTIAL_TRANSCRIPT": text, "created": payload['created']})
 
 def on_error(ws, *err):
-    _LOGGER.write(*err)
+#    _LOGGER.write(*err)
     print(f"Error: {err}", file=sys.stderr)
 
 ########################
@@ -279,6 +257,7 @@ def get_api_key():
 
 def main():
     global p
+    global stream
     global ws
 
     p = pyaudio.PyAudio()
@@ -287,8 +266,6 @@ def main():
     # # Audio config #
     ##################
     DEFAULT_DEVICE = p.get_default_input_device_info()
-    PIPEWIRE_DEVICE_INDEX = 2
-    MICROPHONE_DEVICE_INDEX = 4
     DEFAULT_DEVICE_INDEX = DEFAULT_DEVICE['index']
     SAMPLE_RATE = int(DEFAULT_DEVICE['defaultSampleRate']) # 16000
     FRAMES_PER_BUFFER = int(SAMPLE_RATE)  # Sync AssemblyAI's throughput of twice a second
@@ -296,6 +273,27 @@ def main():
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
     DEVICE_INDEX = DEFAULT_DEVICE_INDEX
+
+    # Set up the signal handler responsible for terminating the program at the end
+    def signal_handler(sig, frame):
+        #global _PYAUDIO_END_TIME
+        global _SHOULD_BE_RUNNING
+        global _AAI_SESSION_END_REQUEST_TIME
+
+        time.sleep(LATENCY)
+        _SHOULD_BE_RUNNING = False
+        print("Sending terminate_session to aai", file=sys.stderr)
+
+        _AAI_SESSION_END_REQUEST_TIME = time.time()
+        if ws is not None:
+            try:
+                ws.send(json.dumps({"terminate_session": True}))
+            except Exception as e:
+                print(f"Error while sending terminate_session: {e}", file=sys.stderr)
+                p.terminate()
+
+    # Register the signal handler
+    signal.signal(signal.SIGINT, signal_handler)
 
     #################################
     # Create and start audio stream #
@@ -331,30 +329,27 @@ def main():
     #############################################################################
     # Run until the program receives SIGINT, in which case it gracefully exists #
     #############################################################################
-    with closing(_LOGGER):
-        _AAI_SESSION_START_REQUEST_TIME = time.time()
-        ec = ws.run_forever()
+    #with closing(_LOGGER):
+    _AAI_SESSION_START_REQUEST_TIME = time.time()
+    ec = ws.run_forever()
 
-        _AAI_SESSION_END_TIME = time.time()
-        # if ec and not stream.is_stopped():
-        #     stream.close()
-        #     p.terminate()
+    _AAI_SESSION_END_TIME = time.time()
 
-        time_to_wrap_up = _AAI_SESSION_END_TIME - _AAI_SESSION_END_REQUEST_TIME
-        transcript = ' '.join(TRANSCRIPT)
-        print(transcript)
+    time_to_wrap_up = _AAI_SESSION_END_TIME - _AAI_SESSION_END_REQUEST_TIME
+    transcript = ' '.join(TRANSCRIPT)
+    print(transcript)
 
-        _LOGGER.write("{SUMMARY: "
-                      f"SESSION_START: {_PYAUDIO_START_TIME}, "
-                      f"AAI_SESSION_REQUEST: {_AAI_SESSION_START_REQUEST_TIME}, "
-                      f"AAI_SESSION_START: {_AAI_SESSION_START_TIME}, "
-                      f"AAI_SESSION_END_REQUEST: {_AAI_SESSION_END_REQUEST_TIME}, "
-                      f"AAI_SESSION_END: {_AAI_SESSION_END_TIME}"
-                      "}")
-        _LOGGER.write(f"TIME_TO_WRAP_UP: {time_to_wrap_up}")
-        _LOGGER.write(json.dumps({"transcript": transcript}))
+        # _LOGGER.write("{SUMMARY: "
+        #               f"SESSION_START: {_PYAUDIO_START_TIME}, "
+        #               f"AAI_SESSION_REQUEST: {_AAI_SESSION_START_REQUEST_TIME}, "
+        #               f"AAI_SESSION_START: {_AAI_SESSION_START_TIME}, "
+        #               f"AAI_SESSION_END_REQUEST: {_AAI_SESSION_END_REQUEST_TIME}, "
+        #               f"AAI_SESSION_END: {_AAI_SESSION_END_TIME}"
+        #               "}")
+        # _LOGGER.write(f"TIME_TO_WRAP_UP: {time_to_wrap_up}")
+        # _LOGGER.write(json.dumps({"transcript": transcript}))
 
-        sys.exit(ec)
+    sys.exit(ec)
 
 if __name__ == '__main__':
     main()
