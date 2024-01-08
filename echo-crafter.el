@@ -28,6 +28,8 @@
 (defvar microphone-stream-buffer nil
   "Buffer for the output of the microphone stream.")
 
+(defvar openai-model "gpt-4")
+
 (defun start-microphone-stream ()
   "Start microphone stream subprocess."
   (interactive)
@@ -63,7 +65,9 @@
         (message "Microphone stream finished with exit code %d" (process-exit-status process))))))
 
 (defun send-output-to-openai ()
-  (setq openai-prompt-process (start-process-shell-command "openai-prompt-process" "*openai-prompt output*" "/home/jfa/projects/echo-crafter/run-make-prompt.sh"))
+  (setq openai-prompt-process (start-process-shell-command "openai-prompt-process"
+                                                           "*openai-prompt output*"
+                                                           "/home/jfa/projects/echo-crafter/run-make-prompt.sh"))
   (set-process-sentinel openai-prompt-process 'openai-prompt-process-sentinel)
   (send-buffer-contents-to-process microphone-stream-buffer openai-prompt-process))
 
