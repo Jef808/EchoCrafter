@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-import socket
 import os
+from pathlib import Path
+import socket
 import subprocess
 
-SOCKET_PATH = "/tmp/transcript_socket"
+SOCKET_PATH = Path(os.getenv('XDG_RUNTIME_DIR')) / "transcription"
 n_connections = 0
 
 
@@ -40,13 +41,13 @@ def handle_client(client_socket, client_address):
 def main():
     """Listen for connections and handle them."""
     try:
-        os.unlink(SOCKET_PATH)
+        SOCKET_PATH.unlink()
     except OSError:
-        if os.path.exists(SOCKET_PATH):
+        if SOCKET_PATH.exists():
             raise
 
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server_socket:
-        server_socket.bind(SOCKET_PATH)
+        server_socket.bind(str(SOCKET_PATH))
         server_socket.listen(1)
 
         try:
@@ -57,7 +58,7 @@ def main():
                 else:
                     handle_client(client_socket, client_address)
         finally:
-            os.unlink(SOCKET_PATH)
+            SOCKET_PATH.unlink()
 
 
 if __name__ == '__main__':

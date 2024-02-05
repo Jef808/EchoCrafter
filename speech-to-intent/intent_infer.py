@@ -4,7 +4,6 @@ import shlex
 import json
 from pathlib import Path
 import sqlite3
-import numpy as np
 import pandas as pd
 
 shell_history_query = r"""select strftime(case when datetime(max_start, 'unixepoch') > datetime('now', 'start of day') then '%H:%M' else '%d/%m' end, max_start, 'unixepoch', 'localtime') as time, session as ses, dir, argv as cmd from (select session, replace(places.dir, '/home/jfa', '~') as dir, replace(commands.argv, '

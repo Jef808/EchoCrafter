@@ -11,23 +11,21 @@ import sys
 
 PROJECT_ROOT = Path(os.getenv('PROJECT_ROOT'))
 CHEETAH_MODEL_FILE = PROJECT_ROOT / "listener/data/speech-command-cheetah-v1.pv"
-PORCUPINE_MODEL_FILE = PROJECT_ROOT / "listener/data/laptop_en_linux_v3_0_0.ppn"
+PORCUPINE_LAPTOP_KEYWORD_FILE = PROJECT_ROOT / "listener/data/laptop_en_linux_v3_0_0.ppn"
 TRANSCRIPT_BEGIN_WAV = PROJECT_ROOT / "listener/data/transcript_begin.wav"
 TRANSCRIPT_SUCCESS_WAV = PROJECT_ROOT / "listener/data/transcript_success.wav"
-
-SOCKET_PATH = "/tmp/transcript_socket"
+SOCKET_PATH = Path(os.getenv('XDG_RUNTIME_DIR')) / "transcription"
 
 
 @contextmanager
-def porcupine_context_manager(keywords, sensitivities):
+def porcupine_context_manager(keyword_paths, sensitivities):
     """Create a Porcupine instance and yield it. Delete the instance upon exit."""
     porcupine_instance = None
     try:
         porcupine_instance = pvporcupine.create(
-            keywords=keywords,
+            keyword_paths=keyword_paths,
             sensitivities=sensitivities,
-            access_key=os.getenv('PICOVOICE_API_KEY'),
-            model_path=PORCUPINE_MODEL_FILE
+            access_key=os.getenv('PICOVOICE_API_KEY')
         )
         yield porcupine_instance
     finally:
@@ -40,9 +38,11 @@ def cheetah_context_manager():
     """Create a Cheetah instance and yield it. Delete the instance upon exit."""
     cheetah_instance = None
     try:
-        cheetah_instance = pvcheetah.create(access_key=os.getenv('PICOVOICE_API_KEY'),
-                                            endpoint_duration_sec=1.3,
-                                            model_path=str(CHEETAH_MODEL_FILE))
+        cheetah_instance = pvcheetah.create(
+            access_key=os.getenv('PICOVOICE_API_KEY'),
+            endpoint_duration_sec=1.3,
+            model_path=str(CHEETAH_MODEL_FILE)
+        )
         yield cheetah_instance
     finally:
         if cheetah_instance:
@@ -73,8 +73,11 @@ def play_sound(wav_file):
 
 def main():
     """Upon detection of a wake word, transcribe speech until endpoint is detected."""
-    keywords = ["computer", "laptop"]
-    sensitivities = [0.1]
+    keywords = ["computer"]
+    keyword_paths = [PORCUPINE_LAPTOP_KEYWORD_FILE]
+    keyword_paths.extend(pvporcupine.KEYWORD_PATHS[w] for w in keywords)
+    keywords = [Path(w).stem.split('_')[0] for w in keyword_paths]
+    sensitivities = [0.1] * len(keyword_paths)
     device_index = -1
     frame_length = 512
 
@@ -84,12 +87,11 @@ def main():
     client = None
 
     try:
-        with porcupine_context_manager(keywords, sensitivities) as porcupine, \
+        with porcupine_context_manager(keyword_paths, sensitivities) as porcupine, \
              cheetah_context_manager() as cheetah, \
              recorder_context_manager(device_index, frame_length) as recorder:
 
             wake_word_detected = False
-            is_endpoint = False
 
             while True:
                 pcm_frame = recorder.read()
@@ -99,7 +101,7 @@ def main():
                     if keyword_index >= 0:
                         wake_word_detected = True
                         client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                        client.connect(SOCKET_PATH)
+                        client.connect(str(SOCKET_PATH))
                         play_sound(TRANSCRIPT_BEGIN_WAV)
 
                 else:
@@ -119,7 +121,7 @@ def main():
         print(f"An error occured: {e}", file=sys.stderr)
     finally:
         if client is not None:
-            client.sendall('STOP'.encode())
+            client.sendall(b'STOP')
             client.close()
 
 
