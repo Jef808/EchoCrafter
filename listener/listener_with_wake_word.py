@@ -7,6 +7,7 @@ import pvcheetah
 import pvporcupine
 import pvrecorder
 import socket
+import subprocess
 import sys
 
 PROJECT_ROOT = Path(os.getenv('PROJECT_ROOT'))
@@ -68,7 +69,7 @@ def recorder_context_manager(device_index, frame_length):
 
 def play_sound(wav_file):
     """Play a ding sound to indicate that the wake word was detected."""
-    os.system(f"aplay {wav_file}")
+    subprocess.Popen(["aplay", str(wav_file)])
 
 
 def main():
@@ -80,10 +81,6 @@ def main():
     sensitivities = [0.1] * len(keyword_paths)
     device_index = -1
     frame_length = 512
-
-    def console_status(flag):
-        return 'Listening for wake word' if not flag else 'Transcribing'
-
     client = None
 
     try:
