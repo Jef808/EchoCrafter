@@ -23,6 +23,7 @@ def format(content):
 
 
 def print_entry(index, line):
+    """Print the entry at index `index`."""
     data = json.loads(line)
     messages = data['payload']['messages']
     responses = data['responses']
@@ -40,13 +41,25 @@ def print_entry(index, line):
 
 def main():
     """Retrieve the queried history entries."""
-    # Parse command line arguments
     if not Path(LLM_API_HISTORY).exists():
         print(f"LLM_API_HISTORY file not found: {LLM_API_HISTORY}", file=sys.stderr)
         sys.exit(1)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('number', nargs='?', const=1, default=-5, type=int, help='Refers to event at index `number` if positive, else refers to event relative to the end of history')
+    parser.add_argument(
+        'number',
+        nargs='?',
+        const=1,
+        default=-5,
+        type=int,
+        help='Refers to event at index `number` if positive, else refers to event relative to the end of history'
+    )
+    parser.add_argument(
+        '-r',
+        '--raw',
+        action='store_true',
+        help='Print the raw content of the last `number` events'
+    )
     args = parser.parse_args()
 
     with open(LLM_API_HISTORY, 'r') as file:

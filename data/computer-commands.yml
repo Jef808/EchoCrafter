@@ -1,0 +1,71 @@
+context:
+  expressions:
+    getScript:
+      - "@promptOpenAI (me) [a, an] ($programmingLanguage:language) script"
+    answerQuestion:
+      - "@promptOpenAI (me) [an, the, the following] answer to [this, that, the,
+        the following] question"
+      - Answer (me) [this, the, the following, that] question
+    simplyTranscribe:
+      - Write [this, that, the following, what follows]
+      - Transcribe
+    changeContext:
+      - "[go to, focus, switch to] the [$pv.SingleDigitOrdinal:windowNumber,
+        $windowName:windowName] window"
+      - "[go to, focus, switch to] the [$pv.SingleDigitOrdinal:contextIndex, $contextType:contextType]"
+    openWindow:
+      - "[open, launch] $windowName:windowName"
+      - "[open, launch] [a, an] (new) $windowName:windowName window"
+    setVolume:
+      - $volumeSetting:volumeSetting (the volume)
+      - (Set) (the) [volume, sound] (to) $pv.Percent:percentage
+  slots:
+    programmingLanguage:
+      - javascript
+      - emacs
+      - shell
+      - python
+    contextType:
+      - window
+      - emacs workspace
+      - stump workspace
+    contextName:
+      - home j f a
+      - home directory
+      - emacs
+      - browser
+    promptType:
+      - question
+      - script
+    windowName:
+      - internet
+      - web
+      - google search
+      - sound control
+      - sound
+      - chrome
+      - fire fox
+      - kitty
+      - browser
+      - emacs
+      - shell
+    volumeSetting:
+      - unmute
+      - mute
+  macros:
+    promptOpenAI:
+      - I need
+      - I want
+      - generate
+      - give
+      - write
+    articlesAndDemonstratives:
+      - that
+      - this
+      - the
+      - an
+      - a
+    generate:
+      - give
+      - write
+      - generate
