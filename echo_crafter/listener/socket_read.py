@@ -10,7 +10,7 @@ import socket
 import subprocess
 import sys
 
-SOCKET_PATH = Path(os.getenv('XDG_RUNTIME_DIR')) / "transcription"
+SOCKET_PATH = Path(os.getenv('XDG_RUNTIME_DIR')) / "echo_crafter.sock"
 n_connections = 0
 
 logger = setup_logger()

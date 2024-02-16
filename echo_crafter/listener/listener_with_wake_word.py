@@ -1,4 +1,5 @@
-"""Listen for a wake word, then transcribe speech."""
+from echo_crafter.config import Config
+from .env_override import EnvOverride
 
 from contextlib import contextmanager
 import os
@@ -13,17 +14,9 @@ import subprocess
 import sys
 import time
 
-PROJECT_ROOT = Path(os.getenv('PROJECT_ROOT'))
-DATA_DIR = PROJECT_ROOT / "data"
-CHEETAH_MODEL_FILE = DATA_DIR / "speech-command-cheetah-v1.pv"
-PORCUPINE_LAPTOP_KEYWORD_FILE = DATA_DIR / "laptop_en_linux_v3_0_0.ppn"
-RHINO_CONTEXT_FILE = DATA_DIR / "computer-commands_en_linux_v3_0_0.rhn"
-TRANSCRIPT_BEGIN_WAV = DATA_DIR / "transcript_begin.wav"
-TRANSCRIPT_SUCCESS_WAV = DATA_DIR / "transcript_success.wav"
-SOCKET_PATH = Path(os.getenv('XDG_RUNTIME_DIR')) / "transcription"
 
-INTENT_TIMEOUT_S = 5
-TRANSCRIPT_TIMEOUT_S = 15
+# Load the configuration
+CONFIG = Config()
 
 
 @contextmanager
@@ -44,12 +37,18 @@ def porcupine_context_manager(keyword_paths, sensitivities):
 
 @contextmanager
 def rhino_context_manager(sensitivity):
-    """Create a Cheetah instance and yield it. Delete the instance upon exit."""
+    """
+    Create a Rhino instance and yield it. Delete the instance upon exit.
+
+    The Rhino context file is a file that contains the speech commands that Rhino should listen for.
+
+    Args: sensitivity: float: The sensitivity of the wake word.
+    """
     rhino_instance = None
     try:
         rhino_instance = pvrhino.create(
             access_key=os.getenv('PICOVOICE_API_KEY'),
-            context_path=str(RHINO_CONTEXT_FILE),
+            context_path=str(CONFIG.paths.files.rhino_context_file),
             sensitivity=sensitivity,
             endpoint_duration_sec=1.,
             require_endpoint=True
@@ -59,7 +58,6 @@ def rhino_context_manager(sensitivity):
         if rhino_instance:
             rhino_instance.delete()
 
-
 @contextmanager
 def cheetah_context_manager():
     """Create a Cheetah instance and yield it. Delete the instance upon exit."""
@@ -68,7 +66,7 @@ def cheetah_context_manager():
         cheetah_instance = pvcheetah.create(
             access_key=os.getenv('PICOVOICE_API_KEY'),
             endpoint_duration_sec=1.,
-            model_path=str(CHEETAH_MODEL_FILE)
+            model_path=str(CONFIG.paths.files.cheetah_model_file)
         )
         yield cheetah_instance
     finally:
@@ -98,54 +96,12 @@ def play_sound(wav_file):
     subprocess.Popen(["aplay", "-q", str(wav_file)])
 
 
-def make_check_for_env_settings():
-    """Monitor the environment for changes and update the relevant globals accordingly."""
-    last_should_wait_for_keyword_s = ''
-    last_intent_s = ''
-    last_slots_s = ''
-    should_wait_for_keyword = True
-    preset_intent = None
-
-    def check_for_env_settings():
-        nonlocal last_should_wait_for_keyword_s
-        nonlocal last_intent_s
-        nonlocal last_slots_s
-        nonlocal should_wait_for_keyword
-        nonlocal preset_intent
-
-        _should_wait_for_keyword_s = os.getenv('ECHO_CRAFTER_WAIT_FOR_KEYWORD') or ''
-        _intent_s = os.getenv('ECHO_CRAFTER_INTENT') or ''
-        _slots_s = os.getenv('ECHO_CRAFTER_INTENT_SLOTS') or ''
-
-        if _should_wait_for_keyword_s != last_should_wait_for_keyword_s:
-            last_should_wait_for_keyword_s = _should_wait_for_keyword_s
-            should_wait_for_keyword = _should_wait_for_keyword_s.lower() == 'false'
-
-        if _intent_s != last_intent_s or _slots_s != last_slots_s:
-            last_intent_s = _intent_s
-            last_slots_s = _slots_s if _intent_s else ''
-
-            intent = [True, _intent_s, {}] if _intent_s else None
-            if _slots_s:
-                slots_kv_s = _slots_s.split(',')
-                try:
-                    intent[2] = {k: v for k, v in (e.split('=') for e in slots_kv_s)}
-                except ValueError:
-                    print("ECHO_CRAFTER_INTENT_SLOTS should be a comma separated list of 'key=value' entries", file=sys.stderr)
-                    intent = None
-            preset_intent = intent
-
-        return should_wait_for_keyword, preset_intent
-
-    return check_for_env_settings
-
-
 def main():
     """Upon detection of a wake word, transcribe speech until endpoint is detected."""
     global should_continue
 
     keywords = ["computer"]
-    keyword_paths = [PORCUPINE_LAPTOP_KEYWORD_FILE]
+    keyword_paths = [CONFIG.paths.files.porcupine_laptop_keyword_file]
     keyword_paths.extend(pvporcupine.KEYWORD_PATHS[w] for w in keywords)
     keywords = [Path(w).stem.split('_')[0] for w in keyword_paths]
     sensitivity = 0.1
@@ -154,7 +110,7 @@ def main():
     frame_length = 512
     client = None
 
-    check_for_env_settings = make_check_for_env_settings()
+    check_for_env_settings = EnvOverride()
 
     wake_word_detected = False
     intent = None
@@ -198,9 +154,9 @@ def main():
                     else:
                         keyword_index = porcupine.process(pcm_frame)
                         if keyword_index >= 0:
-                            wake_word_detected = True
-                            play_sound(TRANSCRIPT_BEGIN_WAV)
-                            wake_word_sound_time = time.time()
+
+                            continue
+
 
                     if wake_word_detected:
                         client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

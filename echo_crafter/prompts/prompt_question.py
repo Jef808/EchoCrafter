@@ -24,25 +24,26 @@ def get_api_key():
 
 def log(payload, response, log_file=DEFAULT_LOG_FILE):
     """Create a log entry for a single query / answer pair."""
+    _response = response.model_dump()
     log_entry = {
-        "timestamp": response['created'],
-        "model": response['model'],
+        "timestamp": _response.created,
+        "model": _response.model,
         "payload": payload,
-        "responses": response['choices'],
-        "usage": response['usage']
+        "responses": _response.choices,
+        "usage": _response.usage
     }
     with open(log_file, 'a+') as f:
         f.write(json.dumps(log_entry) + '\n')
 
 
-def ChatGPT(client, query, temperature):
+def ChatGPT(query, *, client, temperature, model):
     """Make a call to OpenAI's chat completions endpoint."""
     user_query = [
         {"role": "user", "content": query}
     ]
     send_query = (chat_log + user_query)
     payload = {
-        "model": GPT_MODEL,
+        "model": model,
         "messages": send_query,
         "temperature": temperature
     }
@@ -54,6 +55,7 @@ def ChatGPT(client, query, temperature):
 
 def handle_user_input():
     """Gather user input."""
+    console.print("Enter query (Q/q[uit] to quit)...", style="bold cyan")
     query = input()
     return query.strip()
 
@@ -62,7 +64,7 @@ def main(query, *, model=GPT_MODEL, should_chat=True):
     """Run the main chat loop."""
     openai_client = OpenAI(api_key=get_api_key())
 
-    response = ChatGPT(openai_client, query, 1.0)
+    response = ChatGPT(query, client=openai_client, temperature=1.0, model=model)
     answer = response.choices[0].message.content
 
     while should_chat:
@@ -95,13 +97,12 @@ if __name__ == '__main__':
     query = None
 
     if not args.query:
-        console.print("Enter query (Q/q[uit] to quit)...", style="bold cyan")
         query = handle_user_input()
 
         if query.lower() == 'q' or query.lower() == 'quit':
             console.print("User terminated chat", style="bold red")
             sys.exit(0)
     else:
-        query = ' '.join(map(lambda x: x.strip, args.query))
+        query = args.query.strip()
 
-    should_chat = args.chat
+    main(query, model=args.model, should_chat=args.chat)

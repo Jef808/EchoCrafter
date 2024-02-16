@@ -18,14 +18,3 @@ def try_extract_from_backticks(text):
     if matches:
         return matches.group(1)
     return text
-
-
-def get_openai_api_key():
-    """Get the OpenAI API key from the password store."""
-    import os
-    import subprocess
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        api_key = subprocess.check_output(["pass", "openai.com/api_key"])
-        api_key = str(api_key, encoding="utf-8").rstrip()
-    return api_key

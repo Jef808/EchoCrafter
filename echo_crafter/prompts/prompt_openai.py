@@ -4,9 +4,11 @@ import json
 import os
 from pathlib import Path
 from openai import OpenAI
+from echo_crafter.config import Config
 
 DEFAULT_MODEL = "gpt-4"
-DEFAULT_LOG_FILE = Path(os.getenv("XDG_DATA_HOME")) / "openai/logs.jsonl"
+XDG_DATA_HOME = os.environ.get("XDG_DATA_HOME", "~/.local/share")
+DEFAULT_LOG_FILE = Path(XDG_DATA_HOME) / "openai/logs.jsonl"
 
 
 def get_api_key():
@@ -21,12 +23,13 @@ def get_api_key():
 
 def log(payload, response, log_file=DEFAULT_LOG_FILE):
     """Create a log entry for a single query / answer pair."""
+    _response = response.model_dump()
     log_entry = {
-        "timestamp": response['created'],
-        "model": response['model'],
+        "timestamp": _response['created'],
+        "model": _response['model'],
         "payload": payload,
-        "responses": response['choices'],
-        "usage": response['usage']
+        "responses": _response['choices'],
+        "usage": _response['usage']
     }
     with open(log_file, 'a+') as f:
         f.write(json.dumps(log_entry) + '\n')
@@ -56,8 +59,7 @@ def main(query, *, model=DEFAULT_MODEL):
 
 def handle_user_input():
     """Gather user input."""
-    user_input = input()
-    return user_input.strip()
+    return input()
 
 
 if __name__ == "__main__":
@@ -70,12 +72,12 @@ if __name__ == "__main__":
     parser.add_argument('query', nargs='?', help='Optional query')
     args = parser.parse_args()
 
-    query = ' '.join(map(lambda x: x.strip(), args.query))
+    query = args.query
     if query is None:
         query = handle_user_input()
 
     try:
-        response = main(query, model=args.model)
+        response = main(query.strip(), model=args.model)
         print(response)
 
     except OpenAIError as e:

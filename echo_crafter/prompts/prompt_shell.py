@@ -8,7 +8,8 @@ from openai import OpenAI
 
 
 DEFAULT_MODEL = "gpt-4"
-DEFAULT_LOG_FILE = Path(os.getenv("XDG_DATA_HOME")) / "openai/logs.jsonl"
+XDG_DATA_HOME = os.environ.get("XDG_DATA_HOME", "~/.local/share")
+DEFAULT_LOG_FILE = Path(XDG_DATA_HOME) / "openai/logs.jsonl"
 
 
 def get_api_key():
@@ -49,13 +50,14 @@ def format_response(content):
 
 def log(payload, response, log_file=DEFAULT_LOG_FILE):
     """Log the payload and response to a file."""
+    _response = response.model_dump()
     log_entry = {
         "language": "shell",
-        "timestamp": response.created,
-        "model": response.model,
+        "timestamp": _response.created,
+        "model": _response.model,
         "payload": payload,
-        "responses": response.choices,
-        "usage": response.usage
+        "responses": _response.choices,
+        "usage": _response.usage
     }
     with open(log_file, 'a+') as f:
         f.write(json.dumps(log_entry) + '\n')
@@ -92,8 +94,10 @@ if __name__ == '__main__':
     parser.add_argument('command', nargs='?', help='Optional command')
     args = parser.parse_args()
 
-    command = ' '.join(args.command)
-    if command is None:
+    if isinstance(args.command, list):
+        args.command = " ".join(args.command)
+
+    elif args.command is None:
         command = handle_user_input()
 
     try:
