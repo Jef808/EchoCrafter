@@ -1,26 +1,18 @@
-#!/usr/bin/env python3
+from echo_crafter.config import Config
 
-import os
 from pathlib import Path
 import socket
 import subprocess
 
-SOCKET_PATH = Path(os.getenv('XDG_RUNTIME_DIR')) / "transcription"
-n_connections = 0
-
-
 def handle_partial_transcript(partial_transcript):
     """Send partial transcript to the active window."""
-    subprocess.run(
+    subprocess.Popen(
         ['xdotool', 'type', '--clearmodifiers', '--delay', '0', partial_transcript]
     )
 
 
-def handle_client(client_socket, client_address):
+def handle_client(client_socket, _):
     """Handle a client connection."""
-    global n_connections
-    n_connections += 1
-
     try:
         while True:
             partial_transcript = client_socket.recv(1024)
@@ -35,11 +27,11 @@ def handle_client(client_socket, client_address):
                 handle_partial_transcript(partial_transcript_s)
     finally:
         client_socket.close()
-        n_connections -= 1
 
 
 def main():
     """Listen for connections and handle them."""
+    SOCKET_PATH = Path(Config['SOCKET_PATH'])
     try:
         SOCKET_PATH.unlink()
     except OSError:
@@ -47,16 +39,13 @@ def main():
             raise
 
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server_socket:
-        server_socket.bind(str(SOCKET_PATH))
+        server_socket.bind(Config['SOCKET_PATH'])
         server_socket.listen(1)
 
         try:
             while True:
                 client_socket, client_address = server_socket.accept()
-                if n_connections > 0:
-                    client_socket.close()
-                else:
-                    handle_client(client_socket, client_address)
+                handle_client(client_socket, client_address)
         finally:
             SOCKET_PATH.unlink()
 
