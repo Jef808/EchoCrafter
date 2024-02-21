@@ -53,7 +53,7 @@ def recorder_context_manager():
 
 
 class _Microphone:
-    """A context manager for the recorder_context_manager."""
+    """A class implementing the various microphone actions we use."""
 
     def __init__(self, recorder, porcupine, cheetah):
         self.recorder = recorder
@@ -82,7 +82,7 @@ class _Microphone:
 
 @contextmanager
 def Microphone():
-    """Create a Microphone instance and yield it. Delete the instance upon exit."""
+    """A context manager taking care of never leaking any resource."""
     with recorder_context_manager() as recorder, porcupine_context_manager() as porcupine, cheetah_context_manager() as cheetah:
         mic = _Microphone(recorder, porcupine, cheetah)
         yield mic

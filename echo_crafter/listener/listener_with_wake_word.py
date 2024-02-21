@@ -11,7 +11,7 @@ import traceback
 
 def play_sound(wav_file):
     """Play a ding sound to indicate that the wake word was detected."""
-    subprocess.Popen(["aplay", "-q", str(wav_file)])
+    subprocess.Popen(["aplay", "-q", wav_file])
 
 
 def main():
