@@ -1,9 +1,8 @@
-from echo_crafter.config import Config
-
 from contextlib import contextmanager
 import pvcheetah
 import pvporcupine
 import pvrecorder
+from echo_crafter.config import Config
 
 @contextmanager
 def porcupine_context_manager():
@@ -81,8 +80,10 @@ class _Microphone:
 
 
 @contextmanager
-def Microphone():
+def microphone():
     """A context manager taking care of never leaking any resource."""
-    with recorder_context_manager() as recorder, porcupine_context_manager() as porcupine, cheetah_context_manager() as cheetah:
+    with recorder_context_manager() as recorder, \
+         porcupine_context_manager() as porcupine, \
+         cheetah_context_manager() as cheetah:
         mic = _Microphone(recorder, porcupine, cheetah)
         yield mic

@@ -1,8 +1,9 @@
-from echo_crafter.config import Config
+"""Read from a socket and send the data to the active window."""
 
 from pathlib import Path
 import socket
 import subprocess
+from echo_crafter.config import Config
 
 def handle_partial_transcript(partial_transcript):
     """Send partial transcript to the active window."""
@@ -21,21 +22,19 @@ def handle_client(client_socket, _):
             partial_transcript_s = partial_transcript.decode()
             if partial_transcript_s.endswith('STOP'):
                 partial_transcript_s = partial_transcript_s[:-4]
-                handle_partial_transcript(partial_transcript_s)
                 break
-            else:
-                handle_partial_transcript(partial_transcript_s)
+            handle_partial_transcript(partial_transcript_s)
     finally:
         client_socket.close()
 
 
 def main():
     """Listen for connections and handle them."""
-    SOCKET_PATH = Path(Config['SOCKET_PATH'])
+    socket_path = Path(Config['SOCKET_PATH'])
     try:
-        SOCKET_PATH.unlink()
+        socket_path.unlink()
     except OSError:
-        if SOCKET_PATH.exists():
+        if socket_path.exists():
             raise
 
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server_socket:
@@ -47,7 +46,7 @@ def main():
                 client_socket, client_address = server_socket.accept()
                 handle_client(client_socket, client_address)
         finally:
-            SOCKET_PATH.unlink()
+            socket_path.unlink()
 
 
 if __name__ == '__main__':

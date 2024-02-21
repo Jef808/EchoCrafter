@@ -1,13 +1,13 @@
-from echo_crafter.listener.utils import (
-    socket_connection,
-    Microphone
-)
-from echo_crafter.logger import setup_logger
-from echo_crafter.config import Config
+"""Listen for a wake word and transcribe speech until endpoint is detected."""
 
 import subprocess
 import traceback
-
+from echo_crafter.listener.utils import (
+    socket_connection,
+    microphone
+)
+from echo_crafter.logger import setup_logger
+from echo_crafter.config import Config
 
 def play_sound(wav_file):
     """Play a ding sound to indicate that the wake word was detected."""
@@ -18,7 +18,7 @@ def main():
     """Upon detection of a wake word, transcribe speech until endpoint is detected."""
     logger = setup_logger()
 
-    with Microphone() as mic:
+    with microphone() as mic:
         try:
             while True:
                 mic.wait_for_wake_word()
@@ -32,7 +32,7 @@ def main():
             pass
 
         except Exception as e:
-            logger.error(f"An error occured:\n{e}")
+            logger.error("An error occured %s", e)
             logger.error(traceback.format_exc())
 
 

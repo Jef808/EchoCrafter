@@ -2,11 +2,11 @@
 
 """This script is used to restart the listener and socket_read processes."""
 
-from pathlib import Path
-from psutil import Process, process_iter, NoSuchProcess, AccessDenied, ZombieProcess
-from shlex import join as shlex_join
-from typing import List, Sequence
 import subprocess
+from pathlib import Path
+from typing import List, Sequence
+from shlex import join as shlex_join
+from psutil import process_iter, AccessDenied, NoSuchProcess, Process, ZombieProcess
 
 def search_processes(search_strings: Sequence[str]) -> List[Process]:
     """
@@ -19,7 +19,8 @@ def search_processes(search_strings: Sequence[str]) -> List[Process]:
     matching_processes = []
     for proc in process_iter(attrs=['cmdline']):
         try:
-            # The `info` attribute is not part of the `psutil.Process` class, but it is added within the `process_iter` function.
+            # The `info` attribute is not part of the `psutil.Process` class,
+            # but it is added within the `process_iter` function.
             cmdline = shlex_join(proc.info['cmdline'])  # type: ignore
             if any(search_string in cmdline for search_string in search_strings):
                 matching_processes.append(proc)
@@ -56,7 +57,9 @@ def main():
         print(f"Terminated {filename}...")
 
     for filename in ('listener_with_wake_word', 'socket_read'):
-        subprocess.Popen(['python', f'echo_crafter/listener/{filename}.py'], cwd=Path(__file__).parent.parent)  # type: ignore
+        with Path(__file__).parent.parent as cwd:
+            subprocess.Popen(['python', f'echo_crafter/listener/{filename}.py'],
+                             cwd=cwd)  # type: ignore
         print(f"Started {filename}.py...")
 
 
