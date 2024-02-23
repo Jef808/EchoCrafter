@@ -5,6 +5,9 @@ import socket
 import subprocess
 from echo_crafter.config import Config
 
+
+queue = []
+
 def handle_partial_transcript(partial_transcript):
     """Send partial transcript to the active window."""
     subprocess.Popen(
@@ -15,15 +18,17 @@ def handle_partial_transcript(partial_transcript):
 def handle_client(client_socket, _):
     """Handle a client connection."""
     try:
-        while True:
+        got_final_transcript = False
+        while not got_final_transcript:
             partial_transcript = client_socket.recv(1024)
             if not partial_transcript:
                 break
             partial_transcript_s = partial_transcript.decode()
             if partial_transcript_s.endswith('STOP'):
-                partial_transcript_s = partial_transcript_s[:-4]
-                break
+                partial_transcript_s = partial_transcript_s[:-4] + ' '
+                got_final_transcript = True
             handle_partial_transcript(partial_transcript_s)
+
     finally:
         client_socket.close()
 

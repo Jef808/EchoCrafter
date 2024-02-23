@@ -1,4 +1,4 @@
-from .porcupine import microphone
+from .microphone import microphone
 from .sockets import socket_connection
 
 __all__ = [

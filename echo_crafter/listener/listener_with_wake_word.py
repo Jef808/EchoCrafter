@@ -21,10 +21,10 @@ def main():
     with microphone() as mic:
         try:
             while True:
-                mic.wait_for_wake_word()
-                play_sound(Config['TRANSCRIPT_BEGIN_WAV'])
-
                 with socket_connection(Config['SOCKET_PATH']) as client:
+                    mic.wait_for_wake_word()
+                    play_sound(Config['TRANSCRIPT_BEGIN_WAV'])
+
                     mic.process_and_transmit_utterance(client)
                     play_sound(Config['TRANSCRIPT_SUCCESS_WAV'])
 
