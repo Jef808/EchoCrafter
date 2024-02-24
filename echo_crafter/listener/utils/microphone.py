@@ -1,7 +1,12 @@
+from contextlib import contextmanager
+from collections import deque
+from pathlib import Path
+
 import pvcheetah
 import pvporcupine
+import pvrhino
 import pvrecorder
-from contextlib import contextmanager
+
 from echo_crafter.config import Config
 
 
@@ -53,39 +58,75 @@ def recorder_context_manager():
             recorder_instance.delete()
 
 
+@contextmanager
+def rhino_context_manager():
+    """Create a PvRecorder instance and yield it. Delete the instance upon exit."""
+    rhino_instance = None
+    try:
+        rhino_instance = pvrhino.create(
+            access_key=Config['PICOVOICE_API_KEY'],
+            context_path=Config['RHINO_CONTEXT_FILE']
+        )
+        yield rhino_instance
+    finally:
+        if rhino_instance is not None:
+            rhino_instance.delete()
+
+
 class _Microphone:
     """A class implementing the various microphone actions we use."""
 
-    def __init__(self, recorder, porcupine, cheetah, *, log_times=False):
-        self.recorder = recorder
+    def __init__(self, porcupine, rhino, cheetah, recorder):
         self.porcupine = porcupine
+        self.rhino = rhino
         self.cheetah = cheetah
-        self.buffer = bytearray()
+        self.recorder = recorder
+        self.is_listening = False
+        self.wake_word_frame = None
 
 
     def get_next_frame(self):
         """Get the next frame from the recorder."""
+        if self.wake_word_frame is not None:
+            frame = self.wake_word_frame
+            self.wake_word_frame = None
+            return frame
         return self.recorder.read()
 
 
-    def wait_for_wake_word(self):
+    def set_is_listening(self, is_listening):
+        """Set the is_listening attribute of the recorder."""
+        self.is_listening = is_listening
+        if is_listening and not self.recorder.is_recording:
+            self.recorder.start()
+        elif not is_listening and self.recorder.is_recording:
+            self.recorder.stop()
+
+    def wait_for_wake_word(self, wake_word_callback=None):
         """Wait for the wake word to be detected."""
         while True:
-            pcm_frame = self.get_next_frame()
+            pcm_frame = self.recorder.read()
             keyword_index = self.porcupine.process(pcm_frame)
             if keyword_index >= 0:
+                self.wake_word_frame = pcm_frame
+                if wake_word_callback is not None:
+                    wake_word_callback()
                 break
 
 
-    def process_and_transmit_utterance(self, client):
+    def process_and_transmit_utterance(self, transcription_callback, transcription_success_callback=None):
         """Process the utterance and transmit the partial transcript to the client."""
         is_endpoint = False
+        is_transcription_success = False
         while not is_endpoint:
             pcm_frame = self.get_next_frame()
             partial_transcript, is_endpoint = self.cheetah.process(pcm_frame)
             if is_endpoint:
                 partial_transcript += (self.cheetah.flush() + 'STOP')
-            client.sendall((partial_transcript).encode())
+                is_transcription_success = True
+            transcription_callback(partial_transcript)
+            if is_transcription_success and transcription_success_callback is not None:
+                    transcription_success_callback()
 
 
 @contextmanager
@@ -93,7 +134,11 @@ def microphone():
     """A context manager taking care of never leaking any resource."""
     with porcupine_context_manager() as porcupine, \
          cheetah_context_manager() as cheetah, \
+         rhino_context_manager() as rhino, \
          recorder_context_manager() as recorder:
-        mic = _Microphone(recorder, porcupine, cheetah)
-        recorder.start()
+        mic = _Microphone(porcupine,
+                          rhino,
+                          cheetah,
+                          recorder)
+        mic.set_is_listening(True)
         yield mic

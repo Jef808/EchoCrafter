@@ -33,6 +33,7 @@ class _Config(TypedDict):
 
     PICOVOICE_API_KEY: str
     CHEETAH_MODEL_FILE: str
+    RHINO_CONTEXT_FILE: str
     FRAME_LENGTH: int
     ENDPOINT_DURATION_SEC: float
 
@@ -48,6 +49,7 @@ Config: _Config = {
 
     "PICOVOICE_API_KEY":      str(os.getenv('PICOVOICE_API_KEY')),
     "CHEETAH_MODEL_FILE":     str(get_project_root()/"data/speech-command-cheetah-v2.pv"),
+    "RHINO_CONTEXT_FILE":     str(get_project_root()/"data/computer-commands_en_linux_v3_0_0.rhn"),
     "FRAME_LENGTH":           512,
     "ENDPOINT_DURATION_SEC":  1.5,
 
