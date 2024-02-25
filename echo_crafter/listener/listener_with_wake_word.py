@@ -1,67 +1,75 @@
 """Listen for a wake word and transcribe speech until endpoint is detected."""
 
+import json
 import subprocess
 import traceback
-import socket
-from contextlib import contextmanager
-from echo_crafter.listener.utils import (
-    microphone
-)
+from typing import List
+
 from echo_crafter.logger import setup_logger
 from echo_crafter.config import Config
 
-def play_sound(wav_file):
+from echo_crafter.listener.utils import (
+    Intent,
+    microphone
+)
+
+logger = setup_logger(__name__)
+
+def play_sound(wav_file) -> None:
     """Play a ding sound to indicate that the wake word was detected."""
-    subprocess.Popen(["aplay", "-q", wav_file])
+    subprocess.Popen(['aplay', wav_file])
 
 
-def wake_word_callback():
+def on_wake_word_detected() -> None:
     """Play a ding sound to indicate that the wake word was detected."""
     play_sound(Config['TRANSCRIPT_BEGIN_WAV'])
 
 
-@contextmanager
-def create_transcription_callback():
-    """Connect to the transcription socket and send it all partial transcripts."""
-
-    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    try:
-        client.connect(Config['SOCKET_PATH'])
-
-        def callback(partial_transcript):
-            """Send the partial transcript to the active window."""
-            client.sendall((partial_transcript).encode())
-
-        yield callback
-
-    finally:
-        client.close()
-
-
-def transcription_success_callback():
-    """Play a ding sound to indicate that the final transcript was received."""
+def on_intent_inferred(intent_obj: Intent) -> None:
+    """Log the inferred intent and slots."""
+    logger.info("Intent inferred: %s", json.dumps(intent_obj))
+    print(json.dumps(intent_obj, indent=2))
     play_sound(Config['TRANSCRIPT_SUCCESS_WAV'])
+
+
+partial_transcripts: List[str] = []
+
+
+def on_partial_transcript(partial_transcript: str) -> None:
+    """Send the partial transcript to the active window."""
+    partial_transcripts.append(partial_transcript)
+    subprocess.Popen(
+        ['xdotool', 'type', '--clearmodifiers', '--delay', '0', partial_transcript]
+    )
+
+
+def on_final_transcript() -> None:
+    """Log the accumulated partial transcripts"""
+    final_transcript = ''.join(partial_transcripts)
+    partial_transcripts.clear()
+    logger.info("Final transcript: %s", final_transcript)
 
 
 def main():
     """Upon detection of a wake word, transcribe speech until endpoint is detected."""
-    logger = setup_logger()
+    logger = setup_logger(__name__)
 
     with microphone() as mic:
         try:
             while True:
-                with create_transcription_callback() as transcription_callback:
-                    mic.wait_for_wake_word(wake_word_callback)
-
-                    mic.process_and_transmit_utterance(transcription_callback, transcription_success_callback)
+                mic.wait_for_wake_word(on_wake_word_detected)
+                mic.infer_intent(on_intent_inferred)
+                #mic.process_and_transmit_utterance(on_partial_transcript, on_final_transcript)
 
         except KeyboardInterrupt:
-            pass
+            mic.set_is_recording(False)
 
         except Exception as e:
             logger.error("An error occured %s", e)
             logger.error(traceback.format_exc())
 
+        finally:
+            mic.set_is_recording(False)
 
 if __name__ == '__main__':
     main()

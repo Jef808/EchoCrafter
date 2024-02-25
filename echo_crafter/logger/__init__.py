@@ -12,13 +12,11 @@ class CustomRecord(logging.LogRecord):
     """Custom LogRecord class with a timestamp attribute."""
 
     def __init__(self, name, level, pathname, lineno, msg, args,
-                 exc_info, func=None, sinfo=None, **kwargs):
+                 exc_info, func=None, sinfo=None):
         """Initialize a CustomRecord instance."""
         super().__init__(name, level, pathname, lineno, msg, args,
                          exc_info, func=func, sinfo=sinfo)
         self.timestamp = time.time()
-        self.intent = kwargs.get('intent', '')
-        self.slots = kwargs.get('slots', {})
 
 
 class JsonFormatter(logging.Formatter):
@@ -31,7 +29,7 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(log_dict)
 
 
-def setup_logger(name=__name__, level=logging.INFO):
+def setup_logger(name, level=logging.INFO):
     """Set up a logger with a JSON formatter."""
     logger = logging.getLogger(name)
     logger.setLevel(level)

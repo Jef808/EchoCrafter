@@ -9,8 +9,9 @@ from typing import TypedDict
 
 def get_project_root() -> Path:
     """Get the root of the project."""
-    return Path(os.environ.get('EC_ROOT', '')) \
-        or Path(__file__).parent.parent.parent
+    path = Path(os.environ.get('EC_ROOT', '')) \
+        or Path(__file__).resolve().parent.parent.parent
+    return path
 
 
 def get_picovoice_api_key() -> str:
@@ -23,13 +24,18 @@ def get_picovoice_api_key() -> str:
     return api_key
 
 
+def build_path(rel_path: str) -> str:
+    """Build an absolute path from the given path relative to root."""
+    return str(get_project_root() / rel_path)
+
+
 @dataclass(init=False, frozen=True)
 class _Config(TypedDict):
     """Configuration for the echo-crafter package."""
 
     PROJECT_ROOT: str
     DATA_DIR: str
-    PYTHON_PACKAGES_DIR: str
+    PYTHON_PACKAGES: str
 
     PICOVOICE_API_KEY: str
     CHEETAH_MODEL_FILE: str
@@ -44,16 +50,16 @@ class _Config(TypedDict):
 
 Config: _Config = {
     "PROJECT_ROOT":           str(get_project_root()),
-    "DATA_DIR":               str(get_project_root()/"data"),
-    "PYTHON_PACKAGES_DIR":    str(get_project_root()/".venv/lib/python3.11/site-packages/python_packages"),
+    "DATA_DIR":               build_path("data"),
+    "PYTHON_PACKAGES":        build_path(".venv/lib/python3.11/site-packages/python_packages"),
 
     "PICOVOICE_API_KEY":      str(os.getenv('PICOVOICE_API_KEY')),
-    "CHEETAH_MODEL_FILE":     str(get_project_root()/"data/speech-command-cheetah-v2.pv"),
-    "RHINO_CONTEXT_FILE":     str(get_project_root()/"data/computer-commands_en_linux_v3_0_0.rhn"),
+    "CHEETAH_MODEL_FILE":     build_path("data/speech-command-cheetah-v2.pv"),
+    "RHINO_CONTEXT_FILE":     build_path("data/computer-commands_en_linux_v3_0_0.rhn"),
     "FRAME_LENGTH":           512,
     "ENDPOINT_DURATION_SEC":  1.5,
 
-    "TRANSCRIPT_BEGIN_WAV":   str(get_project_root()/"data/transcript_begin.wav"),
-    "TRANSCRIPT_SUCCESS_WAV": str(get_project_root()/"data/transcript_success.wav"),
+    "TRANSCRIPT_BEGIN_WAV":   build_path("data/transcript_begin.wav"),
+    "TRANSCRIPT_SUCCESS_WAV": build_path("data/transcript_success.wav"),
     "SOCKET_PATH":            str(Path(os.environ.get('EC_SOCKET_FILE', '/tmp/echo-crafter.sock')))
 }
