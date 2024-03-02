@@ -1,93 +1,169 @@
-#!/home/jfa/projects/echo-crafter/.venv/bin/python
+#!/usr/bin/env python3
 
 import argparse
-import subprocess
+import time
 import json
-import os
-from pathlib import Path
+import sys
+import re
 from openai import OpenAI
+from rich.console import Console
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import FileHistory
+try:
+    from echo_crafter.config import OpenAIConfig
+except ImportError:
+    sys.path.append('os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))')
+    from echo_crafter.config import OpenAIConfig
+from echo_crafter.prompts.utils import estimate_token_count
+from echo_crafter.config import OpenAIConfig
 
-DEFAULT_MODEL = "gpt-4"
-DEFAULT_LOG_FILE = Path(os.getenv("XDG_DATA_HOME")) / "openai/logs.jsonl"
 
-
-def make_payload(args, prompt):
-    """Make the payload for the OpenAI API."""
-    system_prompt = ("carefully analyze the intent of the provided command "
-                     "then replace it with a python script which, when executed, will run that command")
-    example = [{"role": "system", "name": "example_user", "content": "```\ngive me the absolute path to my home directory\n```"},
-               {"role": "system", "name": "example_assistant", "content": "```python\nimport os;\nprint(os.getenv('HOME'))\n```"}]
-    payload = {
-        "model": args.model,
-        "stop": "\n```",
-        "messages": [
-            {"role": "system", "content": system_prompt}
-        ]
+def prompt_template():
+    """Insert the user query in the prompt template."""
+    system_message = {
+        "role": "system",
+        "content": "1. carefully analyze the intent of the provided command "
+                   "2. respond with a python script which, when executed after installing the necessary packages, will run that command "
+                   "3. Carefully annotate all functions and the script itself with docstrings that accurately reflect intent of the user prompt and describes the code you generated."
     }
-    payload['messages'].extend(example)
-    payload['messages'].append({"role": "user", "content": f"```\n{prompt.strip()}\n```"})
-    return payload
+    example_message = [
+        {"role": "system", "name": "example_user", "content": "Take a string as input and, if it exists, focus the window having a class matching the string."},
+        {"role": "system", "name": "example_assistant", "content": '''```python\nimport subprocess\nimport sys\n\ndef focus_x_window(class_name: str) -> None:\n  """Switch window focus by class name."""\n  subprocess.Popen(["xdotool", "search", "--onlyvisible", "--class", class_name, "windowactivate"])\n```'''}
+    ]
+    return [system_message, *example_message]
 
 
-def get_api_key():
-    """Get the OpenAI API key from the password store."""
-    api_key = subprocess.check_output(["pass", "openai.com/api_key"])
-    api_key = str(api_key, encoding="utf-8").rstrip()
-    return api_key
+class OpenAIAPI:
+    """OpenAI API client."""
+
+    def __init__(self):
+        """Initialize the OpenAI API client."""
+        self.client = OpenAI(api_key=OpenAIConfig['API_KEY'])
+        self.messages = prompt_template()
+        self.temperature = 0.4
+        self.max_new_tokens = None
+        self.messages_token_count = estimate_token_count(self.messages)
+        self.model = OpenAIConfig['DEFAULT_MODEL']
+        self.created = time.time()
+        self.usage = {'completion_tokens': 0, 'prompt_tokens': 0, 'total_tokens': 0}
+
+
+    def create_chat_completion(self, message):
+        """Create a chat completion."""
+        oaimsg = {"role": "user", "content": message}
+        self.messages.append(oaimsg)
+
+        self.messages_token_count += estimate_token_count([oaimsg])
+
+        max_tokens = (self.messages_token_count + self.max_new_tokens
+            if self.max_new_tokens is not None else 0)
+
+        payload = {
+            "model": self.model,
+            "temperature": self.temperature,
+            "messages": self.messages,
+            "max_tokens": max_tokens
+        }
+
+        response = self.client.chat.completions.create(**payload)
+        self.usage['completion_tokens'] += response.usage.completion_tokens
+        self.usage['prompt_tokens'] += response.usage.prompt_tokens
+        self.usage['total_tokens'] += response.usage.total_tokens
+        self.messages_token_count += response.usage.completion_tokens
+
+        self.messages.append({"role": "assistant", "content": response.choices[0].message.content or ""})
+
+        return response
+
+    def log_session(self):
+        """Log the session chat to a file."""
+        try:
+            log_entry = {
+                "language": "python",
+                "timestamp": self.created,
+                "model": self.model,
+                "temperature": self.temperature,
+                "messages": self.messages,
+                "usage": self.usage,
+                "error": None
+            }
+            with open(OpenAIConfig['LOG_FILE'], 'a+') as f:
+                f.write(json.dumps(log_entry) + '\n')
+
+        except Exception as e:
+            print(f"Error occurred while logging session: {e}", file=sys.stderr)
+            print("Current messages:", self.messages, file=sys.stderr)
 
 
 def format_response(content):
-    """Extract the response from the content."""
-    result = []
-    between_backticks = False
-    for line in content.split('\n'):
-        if line.strip().startswith("```"):
-            between_backticks = not between_backticks
-            continue
-        if between_backticks:
-            result.append(line)
-    response = '\n'.join(result) if result else content
-    return response
+    """Extract the code blocks from the content."""
+    split = re.split(r"```(\S+)\s", content)
+    code_blocks = []
+    while len(split) > 3:
+        language = split[1]
+        code = split[2].strip()
+        code_blocks.append(code)
+        split = split[3:]
+
+    return language, '\n\n'.join(code_blocks)
 
 
-def log(payload, response, log_file=DEFAULT_LOG_FILE):
-    """Log the payload and response to a file."""
-    log_entry = {
-        "language": "python",
-        "timestamp": response['created'],
-        "model": response['model'],
-        "payload": payload,
-        "responses": response['choices'],
-        "usage": response['usage']
-    }
-    with open(log_file, 'a+') as f:
-        f.write(json.dumps(log_entry) + '\n')
+def get_prompt_template_token_count():
+    """Estimate the number of tokens in the prompt."""
+    prompt = prompt_template()
+    return estimate_token_count(prompt)
 
 
 def main():
-    """Run the main program."""
     parser = argparse.ArgumentParser(description='Process some arguments.')
-    parser.add_argument('--model', type=str, help='Model to use.', default=DEFAULT_MODEL)
-    parser.add_argument('command', nargs='?', help='Optional command')
+    parser.add_argument('--model',
+                        type=str,
+                        help='Model to use.',
+                        default=OpenAIConfig['DEFAULT_MODEL'],
+                        )
+    parser.add_argument('--max_new_tokens',
+                        type=int,
+                        help='Specify an upper bound on number of tokens generated per response.',
+                        )
+    parser.add_argument('command',
+                        nargs='?',
+                        help='Optional command',
+                        )
     args = parser.parse_args()
 
+    console = Console()
+    session = PromptSession(history=FileHistory(OpenAIConfig['HISTORY_FILE']))
+    api = OpenAIAPI()
+
     command = args.command
-    if command is None:
-        command = input()
+    api.model = args.model
+    api.max_new_tokens = args.max_new_tokens
 
-    openai_client = OpenAI(api_key=get_api_key())
+    try:
+        while True:
+            if command is not None:
+                console.print(">>> ", command, style="bold cyan")
+            else:
+                console.print("User command (Q/q[uit] to quit)...", style="bold cyan")
+                command = session.prompt(">>> ")
+                if command.lower() == 'q' or command.lower() == 'quit':
+                    console.print("User terminated chat", style="bold red")
+                    break
 
-    payload = make_payload(args, command)
+            with console.status("[bold yellow]Waiting for ChatGPT's answer..."):
+                response = api.create_chat_completion(command)
+                command = None
 
-    response = openai_client.chat.completions.create(**payload)
-    py_response = response.model_dump()
+            content = response.choices[0].message.content
+            console.print(content, style="green")
 
-    log(payload, py_response)
+    except KeyboardInterrupt:
+        console.print("User terminated chat", style="bold red")
 
-    content = py_response['choices'][0]['message']['content']
+    finally:
+        api.log_session()
 
-    print(format_response(content))
-
+    return None
 
 if __name__ == '__main__':
     main()

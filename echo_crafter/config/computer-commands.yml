@@ -1,0 +1,71 @@
+context:
+  expressions:
+    getScript:
+      - "@promptVerb (me) [a, an] ($programmingLanguage:language) script"
+    answerQuestion:
+      - "@promptVerb (me) [an, the, the following] answer to [this, that, the,
+        the following] question"
+      - Answer (me) [this, the, the following, that] question
+    simplyTranscribe:
+      - Send (this, that, the following, what follows) to (the) keyboard
+      - Write [this, that, the following, what follows]
+      - Transcribe
+    focusWindow:
+      - "[select, go to, focus the] window number
+        $pv.SingleDigitInteger:windowNumber"
+      - "[go to, focus, switch to] the [$pv.SingleDigitOrdinal:windowNumber,
+        $windowName:windowName] window"
+    openWindow:
+      - "[open, launch] (a) new emacs window"
+    setVolume:
+      - $volumeSetting:volumeSetting (the volume)
+      - (Set) (the) [volume, sound] (to) $pv.Percent:percentage
+    cancel:
+      - (no) wait a second
+      - (no) cancel
+      - (no) never mind
+  slots:
+    programmingLanguage:
+      - stump
+      - lisp
+      - e lisp
+      - c plus plus
+      - javascript
+      - emacs
+      - shell
+      - python
+    promptType:
+      - question
+      - script
+    windowName:
+      - internet
+      - web
+      - google search
+      - sound control
+      - sound
+      - chrome
+      - fire fox
+      - kitty
+      - browser
+      - emacs
+      - shell
+    volumeSetting:
+      - unmute
+      - mute
+  macros:
+    promptVerb:
+      - I need
+      - I want
+      - generate
+      - give
+      - write
+    articlesAndDemonstratives:
+      - that
+      - this
+      - the
+      - an
+      - a
+    generate:
+      - give
+      - write
+      - generate

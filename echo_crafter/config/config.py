@@ -38,14 +38,16 @@ class _Config(TypedDict):
     PYTHON_PACKAGES: str
 
     PICOVOICE_API_KEY: str
+    PORCUPINE_KEYWORD_FILE: str
     CHEETAH_MODEL_FILE: str
+    LEOPARD_MODEL_FILE: str
     RHINO_CONTEXT_FILE: str
     FRAME_LENGTH: int
+    BUFFER_SIZE: int
     ENDPOINT_DURATION_SEC: float
 
-    TRANSCRIPT_BEGIN_WAV: str
-    TRANSCRIPT_SUCCESS_WAV: str
-    SOCKET_PATH: str
+    WAKE_WORD_DETECTED_WAV: str
+    INTENT_SUCCESS_WAV: str
 
 
 Config: _Config = {
@@ -54,12 +56,14 @@ Config: _Config = {
     "PYTHON_PACKAGES":        build_path(".venv/lib/python3.11/site-packages/python_packages"),
 
     "PICOVOICE_API_KEY":      str(os.getenv('PICOVOICE_API_KEY')),
-    "CHEETAH_MODEL_FILE":     build_path("data/speech-command-cheetah-v2.pv"),
-    "RHINO_CONTEXT_FILE":     build_path("data/computer-commands_en_linux_v3_0_0.rhn"),
+    "PORCUPINE_KEYWORD_FILE": build_path("data/computer_linux.ppn"),
+    "CHEETAH_MODEL_FILE":     build_path("data/speech-command-cheetah.pv"),
+    "LEOPARD_MODEL_FILE":     build_path("data/speech-command-leopard.pv"),
+    "RHINO_CONTEXT_FILE":     build_path("data/computer-commands_en_linux.rhn"),
     "FRAME_LENGTH":           512,
+    "BUFFER_SIZE":            512 * 2 * 30,  # 30 seconds
     "ENDPOINT_DURATION_SEC":  1.5,
 
-    "TRANSCRIPT_BEGIN_WAV":   build_path("data/transcript_begin.wav"),
-    "TRANSCRIPT_SUCCESS_WAV": build_path("data/transcript_success.wav"),
-    "SOCKET_PATH":            str(Path(os.environ.get('EC_SOCKET_FILE', '/tmp/echo-crafter.sock')))
+    "WAKE_WORD_DETECTED_WAV": build_path("data/transcript_begin.wav"),
+    "INTENT_SUCCESS_WAV":     build_path("data/transcript_success.wav"),
 }
