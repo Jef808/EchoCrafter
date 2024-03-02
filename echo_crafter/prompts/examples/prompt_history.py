@@ -5,35 +5,55 @@ import json
 import os
 from pathlib import Path
 import sys
+import traceback
+from rich.traceback import install
 
-LLM_API_HISTORY = f"{os.getenv('XDG_DATA_HOME')}/openai/logs.jsonl"
+install()
+
+LLM_API_HISTORY = f"{os.getenv('XDG_DATA_HOME')}/openai/new_logs.jsonl"
 
 
 def format(content):
     """Extract text between backticks or return everything."""
     between_backticks = False
     results = []
-    for line in map(lambda x: x.strip(), content.split('\n')):
-        if line.startswith("```"):
-            between_backticks = not between_backticks
-            continue
-        if between_backticks:
-            results.append(line)
+    try:
+        for line in map(lambda x: x.strip(), content.split('\n')):
+            if line.startswith("```"):
+                between_backticks = not between_backticks
+                continue
+            if between_backticks:
+                results.append(line)
+    except Exception:
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        formatted_traceback = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        print(formatted_traceback)
     return '\n'.join(results) if results else content
 
 
 def print_entry(index, line):
     data = json.loads(line)
-    messages = data['payload']['messages']
-    responses = data['responses']
-    timestamp = data['timestamp']
-    last_user_prompt = [message['content'] for message in messages if message['role'] == 'user'][-1]
-    last_assistant_response = [response['message']['content'] for response in responses if response['message']['role'] == 'assistant'][-1]
+    language = data.get('language', '')
+    timestamp = data.get('timestamp', 0)
+    model = data.get('model', None)
+    temperature = data.get('temperature', None)
+    messages = data.get('messages', [])
+
+    try:
+        first_user_prompt = next(filter(lambda x: x['role'] == 'user', messages))
+        first_assistant_response = next(filter(lambda x: x['role'] == 'user', messages))
+    except StopIteration:
+        return
+
     payload = {
         "index": index,
+        "language": language,
         "timestamp": timestamp,
-        "query": format(last_user_prompt),
-        "answer": format(last_assistant_response)
+        "model": model,
+        "temperature": temperature,
+        "timestamp": timestamp,
+        "query": format(first_user_prompt.get('content', '')),
+        "answer": format(first_assistant_response.get('content', ''))
     }
     print(json.dumps(payload, indent=2))
 

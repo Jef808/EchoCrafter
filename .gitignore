@@ -192,3 +192,5 @@ n# Created by https://www.toptal.com/developers/gitignore/api/elisp
 
 # End of https://www.toptal.com/developers/gitignore/api/elisp
 logs
+notes/
+data/
