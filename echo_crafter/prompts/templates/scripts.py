@@ -20,15 +20,19 @@ PYTHON_BASE_PROMPT = [
 SHELL_BASE_PROMPT = [
     {
         "role": "system",
-        "content": "carefully analyze the intent of the provided command then replace it with a zsh shell script which, when executed on a linux system, will run that command"
+        "content": "1. **Analysis**: Carefully analyze the intent of the provided command\n"
+                   "2. **Code**: Generate a zsh shell script which, when executed on a linux system, will run that command "
+                   "3. **Comments**: Carefully annotate all functions and the script itself with docstrings according to common practice "
+                   "4. **Types**: From the provided command, infer the expected input and output types and add type hints to the function signature "
+                   "5. **Metadata**: Provide a FILENAME for saving the script to a file and a DESCRIPTION reflecting the user's prompt for retrieving the script."
     },
     {
         "role": "system", "name": "example_user",
-        "content": "```\ngive me the absolute path to my home directory\n```"
+        "content": "```\nGive me the absolute path to my home directory\n```"
     },
     {
         "role": "system", "name": "example_assistant",
-        "content": "```zsh\necho $HOME\n```"
+        "content": '## CODE:\n```zsh\n# print the content of the $HOME environment variable to standard output.\necho $HOME\n```\n\n## FILENAME:\nprint_home_dir.sh\n\n## DESCRIPTION:\nA script to print the home directory of the current user.'
     }
 ]
 

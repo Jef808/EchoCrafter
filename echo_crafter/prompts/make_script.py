@@ -27,6 +27,25 @@ def extract_sections_from_markdown(markdown_text: str, sections: list[str]) -> d
 
      Returns:
          dict: A dictionary containing the extracted content as {'section': content}.
+
+     Example:
+
+        markdown_text = '''
+        ## CODE:
+        ```python
+        def hello_world():
+            print("Hello, world!")
+        ```
+
+        ## FILENAME:
+        hello.py
+
+        ## DESCRIPTION:
+        A simple hello world program.
+        '''
+        sections = ["CODE", "FILENAME", "DESCRIPTION"]
+        extract_sections_from_markdown(markdown_text, sections)
+        # Output: {'CODE': 'def hello_world():\n    print("Hello, world!")', 'FILENAME': 'hello.py', 'DESCRIPTION': 'A simple hello world program.'}
      """
      # Regular expressions for extracting the sections
      section_patterns = [f"## {section}:\n(.*)\n\n## {sections[i+1]}" for i, section in enumerate(sections[:-1])]
