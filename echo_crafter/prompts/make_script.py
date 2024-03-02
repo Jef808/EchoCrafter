@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
 import sys
 import re
-sys.path.append('os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))')
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from rich.console import Console
 from rich.markdown import Markdown
 from prompt_toolkit import PromptSession, prompt
