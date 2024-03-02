@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 import os
 import re
 from openai import OpenAI, OpenAIError
@@ -41,7 +42,7 @@ def generate_summary(session):
             "model": "gpt-3.5-turbo",
             "messages": [
                 {"role": "system", "content": SESSION_SUMMARY_TEMPLATE},
-                {"role": "user", "content": format_into_alice_and_bob(session.get('messages', []))}
+                {"role": "user", "content": format_into_alice_and_bob([msg for msg in session.get('messages', []) if msg['role'] != 'system'])}
             ],
             "max_tokens": 120,
             "temperature": 0.7
@@ -66,8 +67,12 @@ def save_session(session):
 if __name__ == "__main__":
     import sys
 
-    with open(sys.argv[1], 'r') as f:
-        jsonl = [json.loads(line) for line in f.read().split('\n')]
+    with open(Path.home() / ".local/share/openai/new_logs.jsonl", 'r') as f:
+        jsonl = [json.loads(line) for line in f.read().split('\n') if line]
+        summaries = {}
         for o in jsonl:
-            generate_summary(o.messages)
-            save_session(o)
+            summary = generate_summary(o['messages'])
+            summaries[o['timestamp']] = summary
+        with open('llmsessions_summaries.jsonl', 'w') as out_file:
+            for timestamp, summary in summaries.items():
+                out_file.write(json.dumps({timestamp: summary}) + '\n')
