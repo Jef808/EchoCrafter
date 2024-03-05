@@ -39,6 +39,3 @@ def setup_logger(name, level=logging.INFO):
     handler.setFormatter(JsonFormatter())
     logger.addHandler(handler)
     return logger
-
-
-__all__ = ['setup_logger']

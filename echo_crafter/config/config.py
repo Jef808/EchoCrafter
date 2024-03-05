@@ -9,9 +9,7 @@ from typing import TypedDict
 
 def get_project_root() -> Path:
     """Get the root of the project."""
-    path = Path(os.environ.get('EC_ROOT', '')) \
-        or Path(__file__).resolve().parent.parent.parent
-    return path
+    return Path(__file__).resolve().parent.parent.parent
 
 
 def get_picovoice_api_key() -> str:
@@ -42,6 +40,7 @@ class _Config(TypedDict):
     CHEETAH_MODEL_FILE: str
     LEOPARD_MODEL_FILE: str
     RHINO_CONTEXT_FILE: str
+    RHINO_CONTEXT_SPEC: str
     FRAME_LENGTH: int
     BUFFER_SIZE: int
     ENDPOINT_DURATION_SEC: float
@@ -56,10 +55,11 @@ Config: _Config = {
     "PYTHON_PACKAGES":        build_path(".venv/lib/python3.11/site-packages/python_packages"),
 
     "PICOVOICE_API_KEY":      str(os.getenv('PICOVOICE_API_KEY')),
-    "PORCUPINE_KEYWORD_FILE": build_path("data/computer_linux.ppn"),
+    "PORCUPINE_KEYWORD_FILE": build_path("data/echo-crafter_linux.ppn"),
     "CHEETAH_MODEL_FILE":     build_path("data/speech-command-cheetah.pv"),
     "LEOPARD_MODEL_FILE":     build_path("data/speech-command-leopard.pv"),
     "RHINO_CONTEXT_FILE":     build_path("data/computer-commands_en_linux.rhn"),
+    "RHINO_CONTEXT_SPEC":     build_path("data/computer-commands.yml"),
     "FRAME_LENGTH":           512,
     "BUFFER_SIZE":            512 * 2 * 30,  # 30 seconds
     "ENDPOINT_DURATION_SEC":  1.5,

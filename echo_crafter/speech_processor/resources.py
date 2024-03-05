@@ -2,14 +2,14 @@
 
 from pathlib import Path
 from contextlib import contextmanager
-from pvrecorder import PvRecorder
 from pvleopard import LeopardError, create as createLeopard
-from pvcheetah import CheetahError, create as createCheetah
 from pvrhino import RhinoError, create as createRhino
 from pvporcupine import KEYWORD_PATHS, PorcupineError, create as createPorcupine
 from pvcobra import CobraError, create as createCobra
+from pvrecorder import PvRecorder
 from echo_crafter.config import Config
 from echo_crafter.logger import setup_logger
+from typing import Generator
 
 logger = setup_logger(__name__)
 
@@ -19,9 +19,10 @@ def pv_keyword_path(keyword):
     keyword_path = KEYWORD_PATHS.get(keyword, "")
     if not keyword_path:
         for f in Path(Config['DATA_DIR']).glob('*.ppn'):
-            filepath = str(f)
-            if filepath.startswith(keyword):
-                keyword_path = filepath
+            print("found file: ", f)
+            filename = str(f.stem)
+            if filename.startswith(keyword):
+                keyword_path = str(f)
                 break
     if not keyword_path:
         raise ValueError(f"Keyword file not found for {keyword}")
@@ -29,7 +30,7 @@ def pv_keyword_path(keyword):
 
 
 @contextmanager
-def create_porcupine(*, sensitivity=0.4, wake_word="computer"):
+def create_porcupine(*, sensitivity, wake_word):
     """Create a Porcupine instance and yield it. Delete the instance upon exit."""
     porcupine_instance = None
     try:
@@ -64,24 +65,6 @@ def create_cobra():
 
 
 @contextmanager
-def create_cheetah():
-    """Create a Cheetah instance and yield it. Delete the instance upon exit."""
-    cheetah_instance = None
-    try:
-        cheetah_instance = createCheetah(
-            access_key=Config['PICOVOICE_API_KEY'],
-            endpoint_duration_sec=Config['ENDPOINT_DURATION_SEC'],
-            model_path=Config['CHEETAH_MODEL_FILE']
-        )
-        yield cheetah_instance
-    except CheetahError as e:
-        logger.error("Cheetah failed to initialize: ", e, exc_info=True)
-    finally:
-        if cheetah_instance is not None:
-            cheetah_instance.delete()
-
-
-@contextmanager
 def create_leopard(*, model_file=Config['LEOPARD_MODEL_FILE']):
     """Create a Leopard instance and yield it. Delete the instance upon exit."""
     leopard_instance = None
@@ -89,7 +72,7 @@ def create_leopard(*, model_file=Config['LEOPARD_MODEL_FILE']):
         leopard_instance = createLeopard(
             access_key=Config['PICOVOICE_API_KEY'],
             model_path=model_file
-        )
+            )
         yield leopard_instance
     except LeopardError as e:
         logger.error("Leopard failed to initialize: ", e, exc_info=True)
@@ -99,12 +82,12 @@ def create_leopard(*, model_file=Config['LEOPARD_MODEL_FILE']):
 
 
 @contextmanager
-def create_recorder(*, frame_length=Config['FRAME_LENGTH']):
+def create_recorder(*, frame_length=Config['FRAME_LENGTH']) -> Generator[PvRecorder, None, None]:
     """Create a PvRecorder instance and yield it. Delete the instance upon exit."""
     recorder_instance = None
     try:
         recorder_instance = PvRecorder(
-            frame_length=frame_length
+            frame_length=frame_length,
         )
         yield recorder_instance
     except Exception as e:

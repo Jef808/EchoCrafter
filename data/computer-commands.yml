@@ -26,32 +26,32 @@ context:
       - (no) never mind
   slots:
     programmingLanguage:
-      - stump
-      - lisp
-      - e lisp
       - c plus plus
-      - javascript
+      - e lisp
       - emacs
-      - shell
+      - javascript
+      - lisp
       - python
+      - shell
+      - stump
     promptType:
       - question
       - script
     windowName:
-      - internet
-      - web
-      - google search
-      - sound control
-      - sound
-      - chrome
-      - fire fox
-      - kitty
       - browser
+      - chrome
       - emacs
+      - fire fox
+      - google search
+      - internet
+      - kitty
       - shell
+      - sound
+      - sound control
+      - web
     volumeSetting:
-      - unmute
       - mute
+      - unmute
   macros:
     promptVerb:
       - I need
