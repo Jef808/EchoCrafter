@@ -1,12 +1,24 @@
 import json
 import yaml
-from .controllers import (
-    focus_window,
-    open_window,
-    set_volume,
-    transcribe,
-    get_script,
-)
+import importlib
+import os
+import sys
+
+def load_controllers():
+    controllers = {}
+    controllers_dir = os.path.join(os.path.dirname(__file__), 'controllers')
+    for filename in os.listdir(controllers_dir):
+        if filename.endswith('.py') and not filename.startswith('__'):
+            module_name = filename[:-3]
+            module = importlib.import_module(f'.controllers.{module_name}', package='echo_crafter.commander')
+            if hasattr(module, 'execute'):
+                controllers[module_name] = module.execute
+    return controllers
+
+controllers = load_controllers()
+
+class IntentHandler:
+    """Handle the intent and execute the command."""
 from echo_crafter.config import Config
 from echo_crafter.logger import setup_logger
 
@@ -48,27 +60,12 @@ class IntentHandler:
             intent: The intent.
             slots: The slots associated with the intent.
         """
-        print(f"Handling intent: {intent}")
-        print(f"With slots: {slots}")
-
-        match intent:
-            case 'getScript':
-                get_script.execute(slots=slots)
-            case 'answerQuestion':
-                pass
-            case 'simplyTranscribe':
-                transcribe.execute(slots=slots)
-            case 'focusWindow':
-                focus_window.execute(slots=slots)
-            case 'openWindow':
-                open_window.execute(slots=slots)
-            case 'setVolume':
-                set_volume.execute(slots=slots)
-            case 'cancel':
-                pass
-            case _:
-                logger.error("No implementation known to handle intent: %s", intent)
-                raise ValueError(f"Intent {intent} not found in context file")
+        controller = controllers.get(intent)
+        if controller:
+            controller(slots=slots)
+        else:
+            logger.error("No controller found to handle intent: %s", intent)
+            raise ValueError(f"Controller for intent {intent} not found")
 
         if intent in self.intents:
             print(f"Executing {intent} with slots {slots}")
