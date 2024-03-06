@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 
-import json
 import math
 import time
 import wave
 import struct
-import subprocess
 from resources import (
     create_recorder,
     create_porcupine,
@@ -21,6 +19,7 @@ from contextlib import ExitStack, contextmanager
 from echo_crafter.commander import intent_handler
 from echo_crafter.logger import setup_logger
 from echo_crafter.config import Config
+from echo_crafter.utils import play_sound
 
 logger = setup_logger(__name__)
 
@@ -43,11 +42,6 @@ class VoiceAssistant:
             self.speech_to_text = stack.enter_context(create_leopard(model_file=Config['LEOPARD_MODEL_FILE']))
             self.recorder = stack.enter_context(create_recorder())
             self.shut_down = stack.pop_all().close
-
-    @staticmethod
-    def play_sound(wav_file_path):
-        """Plays a WAV file."""
-        subprocess.Popen(["aplay", wav_file_path])
 
     def run(self):
         """Starts the voice assistant."""
@@ -86,13 +80,17 @@ class VoiceAssistant:
 
             keyword = self.wake_word_detector.process(pcm_frame)
             if keyword >= 0:
-                self.play_sound(Config['WAKE_WORD_DETECTED_WAV'])
+                play_sound(Config['WAKE_WORD_DETECTED_WAV'])
                 for frame in _buffer:
                     self.audio_buffer.put_nowait(frame)
                 break
 
     def wait_for_intent(self, output_file=None):
-        """Processes buffered audio for intent recognition."""
+        """Infer the intent from the audio frames.
+
+        Here we buffer the audio frames in case intent inference
+        fails and we need to transcribe the audio.
+        """
         while self.is_recording():
             pcm_frame = self.recorder.read()
             self.audio_buffer.put_nowait(pcm_frame)
@@ -100,7 +98,7 @@ class VoiceAssistant:
             if self.speech_to_intent.process(pcm_frame):
                 inference = self.speech_to_intent.get_inference()
                 if inference.is_understood:
-                    self.play_sound(Config['INTENT_SUCCESS_WAV'])
+                    play_sound(Config['INTENT_SUCCESS_WAV'])
                     self.handle_intent(inference)
                 else:
                     with self.audio_buffering():
@@ -133,7 +131,11 @@ class VoiceAssistant:
                 raise RuntimeError("Failed to stop buffering thread")
 
     def get_utterance(self) -> list[int]:
-        """Finds the start of speech in the audio buffer."""
+        """Detect the end of speech.
+
+        This function uses VAD to detect the end of speech.
+        Returns the number of frames during which speech was detected.
+        """
         utterance = list()
 
         # Compute the number of silent frames to wait before ending the utterance
@@ -175,6 +177,7 @@ class VoiceAssistant:
 
 
     def _reset_recorder(self):
+        """Stops and starts the recorder to reset its state (flush its inner buffer)."""
         if self.recorder.is_recording:
             self.recorder.stop()
         while self.recorder.is_recording:
@@ -182,6 +185,7 @@ class VoiceAssistant:
         self.recorder.start()
 
     def _flush_audio_buffer(self):
+        """Flushes the audio buffer."""
         while True:
             try:
                 self.audio_buffer.get_nowait()
@@ -197,7 +201,6 @@ class VoiceAssistant:
     def handle_intent(self, inference):
         """Handles the processing of recognized intents."""
         self.intent_handler(intent=inference.intent, slots=inference.slots)
-        #print(json.dumps(dict(intent=inference.intent, slots=inference.slots)))
 
     def handle_transcription(self, transcript, words):
         """Handles the processing of transcriptions."""

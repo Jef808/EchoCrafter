@@ -1,29 +1,29 @@
 context:
   expressions:
-    getScript:
-      - "@promptVerb (me) [a, an] ($programmingLanguage:language) script"
     answerQuestion:
       - "@promptVerb (me) [an, the, the following] answer to [this, that, the,
         the following] question"
       - Answer (me) [this, the, the following, that] question
-    simplyTranscribe:
-      - Send (this, that, the following, what follows) to (the) keyboard
-      - Write [this, that, the following, what follows]
-      - Transcribe
+    cancel:
+      - (no) wait a second
+      - (no) cancel
+      - (no) never mind
     focusWindow:
       - "[select, go to, focus the] window number
         $pv.SingleDigitInteger:windowNumber"
       - "[go to, focus, switch to] the [$pv.SingleDigitOrdinal:windowNumber,
         $windowName:windowName] window"
+    getScript:
+      - "@promptVerb (me) [a, an] ($programmingLanguage:language) script"
     openWindow:
       - "[open, launch] (a) new emacs window"
+    simplyTranscribe:
+      - Send (this, that, the following, what follows) to (the) keyboard
+      - Write [this, that, the following, what follows]
+      - Transcribe
     setVolume:
       - $volumeSetting:volumeSetting (the volume)
       - (Set) (the) [volume, sound] (to) $pv.Percent:percentage
-    cancel:
-      - (no) wait a second
-      - (no) cancel
-      - (no) never mind
   slots:
     programmingLanguage:
       - stump
@@ -37,35 +37,36 @@ context:
     promptType:
       - question
       - script
-    windowName:
-      - internet
-      - web
-      - google search
-      - sound control
-      - sound
-      - chrome
-      - fire fox
-      - kitty
-      - browser
-      - emacs
-      - shell
     volumeSetting:
-      - unmute
       - mute
+      - unmute
+    windowName:
+      - browser
+      - chrome
+      - emacs
+      - fire fox
+      - google search
+      - internet
+      - kitty
+      - shell
+      - sound
+      - sound control
+      - web
+
   macros:
+    articlesAndDemonstratives:
+      - a
+      - an
+      - that
+      - the
+      - this
+    generate:
+      - generate
+      - give
+      - write
     promptVerb:
       - I need
       - I want
       - generate
       - give
       - write
-    articlesAndDemonstratives:
-      - that
-      - this
-      - the
-      - an
-      - a
-    generate:
-      - give
-      - write
-      - generate

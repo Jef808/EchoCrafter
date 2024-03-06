@@ -9,6 +9,7 @@ WINDOW_NAMES_ALIAS = {
     "emacs": "emacs",
     "fire fox": "firefox",
     "google search": "chrome",
+    "internet": "chrome",
     "kitty": "kitty",
     "shell": "kitty",
     "sound": "pavucontrol",

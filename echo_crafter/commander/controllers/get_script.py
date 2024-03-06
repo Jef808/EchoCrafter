@@ -1,7 +1,7 @@
 from echo_crafter.logger import setup_logger
 from echo_crafter.config import Config
 from echo_crafter.prompts import make_script
-from .transcribe import _execute as execute_transcription
+from .simply_transcribe import _execute as execute_transcription
 
 logger = setup_logger(__name__)
 
@@ -17,4 +17,4 @@ def execute(*, slots):
 
     query = ''.join(transcript)
 
-    make_script.main(query, language=language, model='gpt-4-turbo-preview', temperature=0.4, max_new_tokens=1000)
+    make_script.main(query, language=language, model='gpt-4-turbo-preview', temperature=0.4, max_new_tokens=300)

@@ -5,6 +5,7 @@ import os
 import sys
 import re
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from pathlib import Path
 from rich.console import Console
 from rich.markdown import Markdown
 from prompt_toolkit import PromptSession, prompt
@@ -14,7 +15,6 @@ from echo_crafter.prompts import OpenAIAPI
 from echo_crafter.prompts.templates import (
      PYTHON_BASE_PROMPT,
      SHELL_BASE_PROMPT,
-     ELISP_BASE_PROMPT
 )
 
 
@@ -72,6 +72,8 @@ def extract_code_block(content):
 def main(command: str | None, *, model: str, language: str, temperature: float, max_new_tokens: int):
     """Main function for the script."""
 
+    script_repository = Path(__file__)/"examples"
+
     match language:
         case 'python':
              base_prompt = PYTHON_BASE_PROMPT
@@ -81,10 +83,6 @@ def main(command: str | None, *, model: str, language: str, temperature: float, 
              shebang = "#!/usr/bin/env zsh\n\n"
              extension = ".sh"
              base_prompt = SHELL_BASE_PROMPT
-        case 'elisp':
-             shebang = "#!/usr/bin/env emacs --script\n\n"
-             extension = ".el"
-             base_prompt = ELISP_BASE_PROMPT
         case _:
             raise ValueError(f"Unsupported language: {language}")
 
@@ -122,12 +120,12 @@ def main(command: str | None, *, model: str, language: str, temperature: float, 
                 if save.lower() == 'y':
                     try:
                         code = extract_code_block(sections["CODE"])
-                        with open(_fname, 'w') as f:
+                        with open(script_repository / _fname, 'w') as f:
                             f.write(f"{shebang}{code}")
-                            console.print(f"Saved to {_fname}", style="bold green")
+                            console.print(f"Saved as {_fname} in the {script_repository} directory", style="bold green")
                             break
                     except OSError as e:
-                        console.print(f"Error saving to {_fname}: {e}", style="bold orange")
+                        console.print(f"Error saving {_fname}: {e}", style="bold orange")
                 else:
                     console.print("Let me know how I can edit my previous answer to better reflect your intent.", style="bold green")
 
@@ -145,7 +143,7 @@ if __name__ == '__main__':
 
      parser.add_argument('command',          nargs='?',  help='Optional command')
      parser.add_argument('--model',          type=str,   help='Model to use.', default=OpenAIConfig['DEFAULT_MODEL'])
-     parser.add_argument('--language',       type=str,   help='Language to use.', default='python')
+     parser.add_argument('--language',       type=str,   help='Language to use (python or shell).', default='python')
      parser.add_argument('--temperature',    type=float, help='Sampling temperature to use [floating point number between 0 and 2]', default=0.2)
      parser.add_argument('--max_new_tokens', type=int,   help='Specify an upper bound on number of tokens generated per response.')
 

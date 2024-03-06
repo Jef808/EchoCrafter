@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import time
 import subprocess
 from typing import Callable
 from threading import Thread
@@ -10,7 +11,7 @@ from echo_crafter.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-def _execute(*, callback: Callable[..., None]):
+def _execute(callback: Callable[..., None], *, timeout_seconds=12):
     """Upon detection of a wake word, transcribe speech until endpoint is detected."""
 
     try:
@@ -24,11 +25,13 @@ def _execute(*, callback: Callable[..., None]):
             recorder = PvRecorder(frame_length=512)
             recorder.start()
 
+            start_time = time.time()
+
             try:
                 while True:
                     partial_transcript, is_endpoint = cheetah.process(recorder.read())
                     callback(partial_transcript)
-                    if is_endpoint:
+                    if is_endpoint or time.time() - start_time > timeout_seconds:
                         callback(cheetah.flush())
                         break
             finally:
@@ -51,7 +54,7 @@ def execute(*, slots):
     else:
         callback = lambda x: send_to_keyboard(x) and send_to_clipboard(x)
 
-    Thread(_execute(callback=callback)).start()
+    Thread(target=_execute, args=(callback,)).start()
 
 
 def get_callback(destination: str) -> Callable[..., None]:

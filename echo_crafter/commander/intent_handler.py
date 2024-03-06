@@ -1,8 +1,30 @@
+import os
+import re
+import sys
 import json
 import yaml
 import importlib
-import os
-import sys
+from echo_crafter.config import Config
+from echo_crafter.logger import setup_logger
+from echo_crafter.utils import play_sound
+
+
+logger = setup_logger(__name__)
+
+def camel_to_snake(camel_str: str) -> str:
+    """
+    Convert a string from CamelCase to snake_case.
+
+    Args:
+    camel_str (str): The CamelCase string to be converted.
+
+    Returns:
+    str: The converted snake_case string.
+    """
+    # Insert an underscore before any uppercase letter followed by a lowercase letter, then lowercase the entire string
+    snake_str = re.sub(r'(?<!^)(?=[A-Z][a-z])', '_', camel_str).lower()
+    return snake_str
+
 
 def load_controllers():
     controllers = {}
@@ -15,14 +37,6 @@ def load_controllers():
                 controllers[module_name] = module.execute
     return controllers
 
-controllers = load_controllers()
-
-class IntentHandler:
-    """Handle the intent and execute the command."""
-from echo_crafter.config import Config
-from echo_crafter.logger import setup_logger
-
-logger = setup_logger(__name__)
 
 class IntentHandler:
     """Handle the intent and execute the command."""
@@ -44,6 +58,7 @@ class IntentHandler:
 
         self.intents = list(self.context['expressions'].keys())
         self.slots = self.context['slots']
+        self.controllers = load_controllers()
 
         print("Context specs: ")
         print(json.dumps(self.context, indent=2))
@@ -60,18 +75,19 @@ class IntentHandler:
             intent: The intent.
             slots: The slots associated with the intent.
         """
-        controller = controllers.get(intent)
+        controller = self.controllers.get(camel_to_snake(intent))
         if controller:
             controller(slots=slots)
+            play_sound(Config['INTENT_SUCCESS_WAV'])
         else:
             logger.error("No controller found to handle intent: %s", intent)
             raise ValueError(f"Controller for intent {intent} not found")
 
-        if intent in self.intents:
-            print(f"Executing {intent} with slots {slots}")
-        else:
-            print(f"Intent {intent} not found in context file")
-            raise ValueError(f"Intent {intent} not found in context file")
+        # if intent in self.intents:
+        #     print(f"Executing {intent} with slots {slots}")
+        # else:
+        #     print(f"Intent {intent} not found in context file")
+        #     raise ValueError(f"Intent {intent} not found in context file")
 
 
 def initialize():

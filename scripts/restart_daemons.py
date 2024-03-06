@@ -44,7 +44,7 @@ def get_corresponding_filename(process: Process) -> str:
 
 def main():
     """Restart the listener and socket_read processes."""
-    matching_processes = search_processes(('voice_assistant_v2',))
+    matching_processes = search_processes(('voice_assistant',))
     matching_processes_filenames = [get_corresponding_filename(proc) for proc in matching_processes]
 
     for proc, filename in zip(matching_processes, matching_processes_filenames):
@@ -56,7 +56,7 @@ def main():
             print(f"No permission to terminate process with PID {proc.pid}.")
         print(f"Terminated {filename}...")
 
-    for filename in ('voice_assistant_v2',):
+    for filename in ('voice_assistant',):
         with Path(__file__).parent.parent as cwd:
             subprocess.Popen(['python', f'echo_crafter/speech_processor/{filename}.py'],
                              cwd=cwd)  # type: ignore
