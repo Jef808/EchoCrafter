@@ -1,4 +1,5 @@
 import os
+from echo_crafter.config.config import build_path  # Assuming build_path is a function to build paths from config
 import re
 import json
 import yaml
@@ -40,7 +41,7 @@ def load_controllers():
 class IntentHandler:
     """Handle the intent and execute the command."""
 
-    def __init__(self, context_file: str = Config['RHINO_CONTEXT_SPEC']):
+    def __init__(self, context_file: str = Config['RHINO_CONTEXT_SPEC'], controllers_dir: str = ''):
         """Initialize the intent handler.
 
         Args:
@@ -57,7 +58,7 @@ class IntentHandler:
 
         self.intents = list(self.context['expressions'].keys())
         self.slots = self.context['slots']
-        self.controllers = load_controllers()
+        self.controllers = load_controllers(controllers_dir)
 
         print("Context specs: ")
         print(json.dumps(self.context, indent=2))
