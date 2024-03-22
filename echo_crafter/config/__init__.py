@@ -1,4 +1,4 @@
 from .config import Config
-from .openai_config import OpenAIConfig
+from .llm_config import LLMConfig
 
-__all__= ['Config', 'OpenAIConfig']
+__all__= ['Config', 'LLMConfig']

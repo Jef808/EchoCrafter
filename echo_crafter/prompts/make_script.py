@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from prompt_toolkit import PromptSession, prompt
 from prompt_toolkit.history import FileHistory
-from echo_crafter.config import OpenAIConfig
+from echo_crafter.config import LLMConfig
 from echo_crafter.prompts import OpenAIAPI
 from echo_crafter.prompts.templates import (
      PYTHON_BASE_PROMPT,
@@ -87,7 +87,7 @@ def main(command: str | None, *, model: str, language: str, temperature: float, 
             raise ValueError(f"Unsupported language: {language}")
 
     console = Console()
-    session = PromptSession(history=FileHistory(OpenAIConfig['HISTORY_FILE']))
+    session = PromptSession(history=FileHistory(LLMConfig['HISTORY_FILE']))
     api = OpenAIAPI(base_prompt, model=model, max_new_tokens=max_new_tokens, temperature=temperature)
 
     command = command
@@ -142,7 +142,7 @@ if __name__ == '__main__':
      parser = argparse.ArgumentParser(description='Process some arguments.')
 
      parser.add_argument('command',          nargs='?',  help='Optional command')
-     parser.add_argument('--model',          type=str,   help='Model to use.', default=OpenAIConfig['DEFAULT_MODEL'])
+     parser.add_argument('--model',          type=str,   help='Model to use.', default=LLMConfig['DEFAULT_MODEL'])
      parser.add_argument('--language',       type=str,   help='Language to use (python or shell).', default='python')
      parser.add_argument('--temperature',    type=float, help='Sampling temperature to use [floating point number between 0 and 2]', default=0.2)
      parser.add_argument('--max_new_tokens', type=int,   help='Specify an upper bound on number of tokens generated per response.')

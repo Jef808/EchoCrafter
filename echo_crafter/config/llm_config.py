@@ -12,7 +12,7 @@ def get_api_key(provider: Literal['openai', 'anthropic']) -> str:
     match provider:
         case 'openai':
             api_key = os.environ.get('OPENAI_API_KEY')
-        case 'anthropic'
+        case 'anthropic':
             api_key = os.environ.get('ANTHROPIC_API_KEY')
     if not api_key:
         raise ValueError(f"API key for {provider} not found.")
@@ -54,7 +54,7 @@ class Model(TypedDict):
 
 
 @dataclass
-class _OpenAIConfig(TypedDict):
+class _LLMConfig(TypedDict):
     """Configuration for the prompt package."""
 
     API_KEY: str
@@ -64,7 +64,7 @@ class _OpenAIConfig(TypedDict):
     MODELS: list[Model]
 
 
-OpenAIConfig: _OpenAIConfig = {
+LLMConfig: _LLMConfig = {
     "API_KEY": get_api_key('openai'),
     "LOG_FILE": get_openai_log_path(),
     "HISTORY_FILE": get_history_file(),

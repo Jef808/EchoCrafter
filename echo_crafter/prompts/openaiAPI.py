@@ -3,14 +3,14 @@ import json
 import sys
 sys.path.append('os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))')
 from openai import OpenAI, OpenAIError
-from echo_crafter.config import OpenAIConfig
+from echo_crafter.config import LLMConfig
 
 class OpenAIAPI:
     """OpenAI API client."""
 
     def __init__(self, SYSTEM_MESSAGES, *, model, max_new_tokens=None, temperature=None):
         """Initialize the OpenAI API client."""
-        self.client = OpenAI(api_key=OpenAIConfig['API_KEY'])
+        self.client = OpenAI(api_key=LLMConfig['API_KEY'])
         self.session_id = None
         self.messages = SYSTEM_MESSAGES
         self.temperature = temperature if temperature is not None else 0.4
@@ -38,8 +38,8 @@ class OpenAIAPI:
         self.usage['completion_tokens'] += response.usage.completion_tokens
         self.usage['prompt_tokens'] += response.usage.prompt_tokens
         self.usage['total_tokens'] += response.usage.total_tokens
-        self.cost += response.usage.prompt_tokens * OpenAIConfig['MODELS'][0]['pricing']['input'] / 1_000_000
-        self.cost += response.usage.completion_tokens * OpenAIConfig['MODELS'][0]['pricing']['output']  / 1_000_000
+        self.cost += response.usage.prompt_tokens * LLMConfig['MODELS'][0]['pricing']['input'] / 1_000_000
+        self.cost += response.usage.completion_tokens * LLMConfig['MODELS'][0]['pricing']['output']  / 1_000_000
 
         content = response.choices[0].message.content
         if content:
@@ -62,7 +62,7 @@ class OpenAIAPI:
                 "cost": self.cost,
                 "error": None
             }
-            with open(OpenAIConfig['LOG_FILE'], 'a+') as f:
+            with open(LLMConfig['LOG_FILE'], 'a+') as f:
                 f.write(json.dumps(log_entry) + '\n')
 
         except Exception as e:
