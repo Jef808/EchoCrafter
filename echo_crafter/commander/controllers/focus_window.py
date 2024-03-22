@@ -1,41 +1,35 @@
 import re
 import json
 import subprocess
+from typing import Optional
 
 
 WINDOW_NAMES_ALIAS = {
     "browser": "chrome",
     "chrome": "chrome",
     "emacs": "emacs",
-    "fire fox": "firefox",
-    "google search": "chrome",
+    "fire_fox": "firefox",
+    "google_search": "chrome",
     "internet": "chrome",
     "kitty": "kitty",
     "shell": "kitty",
     "sound": "pavucontrol",
-    "sound control": "pavucontrol",
+    "sound_control": "pavucontrol",
     "web": "chrome",
 }
 
 
-def execute(*, slots):
-    """Focus the window with the given name."""
-    if slots.get('windowNumber') is not None:
-        window_number = slots['windowNumber']
+def execute(*, window_number: Optional[str] = None, window_name: Optional[str] = None):
+    """Focus the window with the given name or number."""
+    if window_number is not None:
         m = re.match(r'\d+', window_number)
         if m is not None:
-            try:
-                number = m.group(0)
-                print(f"focusing window number {number}")
-                subprocess.Popen(['stumpish', 'select-window-by-number', number])
-            except ValueError:
-                pass
-    elif slots.get('windowName') is not None:
-        window_name = slots['windowName']
-        print(f"focusing window {window_name}")
+            number = m.group(0)
+            subprocess.Popen(['stumpish', 'select-window-by-number', number])
+    elif window_name is not None:
+        name = WINDOW_NAMES_ALIAS.get(window_name, '')
         subprocess.Popen(
-            ['xdotool', 'search', '--onlyvisible', '--class', window_name, 'windowactivate']
+            ['xdotool', 'search', '--onlyvisible', '--class', name, 'windowactivate']
         )
-
     else:
-        raise ValueError(f"Invalid slots for the 'focusWindow' intent:\n{json.dumps(slots)}")
+        raise ValueError(f"Invalid parameters for the 'focusWindow' intent")

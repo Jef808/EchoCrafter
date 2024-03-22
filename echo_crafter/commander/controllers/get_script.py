@@ -1,20 +1,11 @@
 from echo_crafter.logger import setup_logger
-from echo_crafter.config import Config
 from echo_crafter.prompts import make_script
 from .simply_transcribe import _execute as execute_transcription
+from typing import Literal
 
 logger = setup_logger(__name__)
 
-def execute(*, slots):
+def execute(*, language: Literal['python', 'shell'] = 'python'):
     """Execute the getScript intent."""
-    language = slots.get('language', 'python')
-
-    transcript = []
-
-    callback = lambda x: transcript.append(x)
-
-    execute_transcription(callback=callback)
-
-    query = ''.join(transcript)
-
-    make_script.main(query, language=language, model='gpt-4-turbo-preview', temperature=0.4, max_new_tokens=300)
+    callback = lambda x: make_script.main(x, language=language, model='gpt-4-turbo-preview', temperature=0.4, max_new_tokens=300)
+    execute_transcription(callback_final=callback)

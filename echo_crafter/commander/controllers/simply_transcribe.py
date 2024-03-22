@@ -2,7 +2,7 @@
 
 import time
 import subprocess
-from typing import Callable
+from typing import Callable, Optional
 from threading import Thread
 from pvrecorder import PvRecorder
 from pvcheetah import create, CheetahError
@@ -11,7 +11,7 @@ from echo_crafter.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-def _execute(callback: Callable[..., None], *, timeout_seconds=12):
+def _execute(callback_partial: Optional[Callable[..., None]] = None, callback_final: Optional[Callable[..., None]] = None, timeout_seconds=6.0):
     """Upon detection of a wake word, transcribe speech until endpoint is detected."""
 
     try:
@@ -20,19 +20,25 @@ def _execute(callback: Callable[..., None], *, timeout_seconds=12):
             endpoint_duration_sec=Config['ENDPOINT_DURATION_SEC'],
             model_path=Config['CHEETAH_MODEL_FILE']
         )
-
         try:
             recorder = PvRecorder(frame_length=512)
             recorder.start()
-
             start_time = time.time()
+            partial_transcripts = []
 
             try:
-                while True:
+                while recorder.is_recording:
                     partial_transcript, is_endpoint = cheetah.process(recorder.read())
-                    callback(partial_transcript)
+                    partial_transcripts.append(partial_transcript)
+                    if callback_partial is not None:
+                        callback_partial(partial_transcript)
                     if is_endpoint or time.time() - start_time > timeout_seconds:
-                        callback(cheetah.flush())
+                        partial_transcript = cheetah.flush()
+                        partial_transcripts.append(partial_transcript)
+                        if callback_partial is not None:
+                            callback_partial(partial_transcript)
+                        if callback_final is not None:
+                            callback_final(''.join(partial_transcripts))
                         break
             finally:
                 recorder.stop()
@@ -44,27 +50,11 @@ def _execute(callback: Callable[..., None], *, timeout_seconds=12):
         cheetah.delete()
 
 
-def execute(*, slots):
-    if slots.get('destination') is not None:
-        destination = slots['destination']
-        if destination in ['clipboard', 'keyboard']:
-            callback = get_callback(destination)
-        else:
-            raise ValueError(f"Invalid destination slot value: {destination}.")
-    else:
-        callback = lambda x: send_to_keyboard(x) and send_to_clipboard(x)
-
-    Thread(target=_execute, args=(callback,)).start()
-
-
-def get_callback(destination: str) -> Callable[..., None]:
-    match destination:
-        case 'clipboard':
-            return send_to_clipboard
-        case 'keyboard':
-            return send_to_keyboard
-        case _:
-            raise ValueError(f"Invalid destination slot value: {destination}.")
+def execute(*, callback_partial: Optional[Callable[..., None]] = None, callback_final: Optional[Callable[..., None]] = None):
+    if callback_partial is None and callback_final is None:
+        callback_partial = send_to_keyboard
+        callback_final = send_to_clipboard
+    Thread(target=_execute, args=(callback_partial, callback_final,)).start()
 
 
 def send_to_keyboard(content: str) -> None:

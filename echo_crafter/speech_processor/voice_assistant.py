@@ -30,8 +30,10 @@ class VoiceAssistant:
     def __init__(self, *,
                  wake_word="Echo-crafter",
                  wake_word_sensitivity=0.4,
-                 intent_sensitivity=0.6):
+                 intent_sensitivity=0.6,
+                 max_utterance_duration_sec=5.0):
         self.wake_words = [wake_word]
+        self.max_utterance_duration_sec = max_utterance_duration_sec
         self.audio_buffer = Queue()
         self.pv = {}
         self.intent_handler = intent_handler.initialize()
@@ -49,13 +51,17 @@ class VoiceAssistant:
             while True:
                 self.reset()
                 self.wait_for_wake_word()
-                self.wait_for_intent("intent_utterance.wav")
+                self.wait_for_intent(save="intent_utterance.wav")
         finally:
             self.shut_down()
 
     def is_recording(self):
         """Returns whether the voice assistant is currently recording."""
         return self.recorder.is_recording
+
+    def get_frame_length_sec(self):
+        """Returns the frame length in seconds."""
+        return self.recorder.frame_length * 2 / self.recorder.sample_rate
 
     def wait_for_wake_word(self, num_frames_to_keep: int = 8):
         """Listens for the wake word and starts processing when detected.
@@ -69,9 +75,8 @@ class VoiceAssistant:
         detection will actually occur 6 frames after the wake-word is done being spoken. Those frames will be lost unless
         we save them and prepend them to the next step's buffer.
         """
-        print("Listening for wake word...")
         _buffer = deque()
-        while True:
+        while self.is_recording():
             if len(_buffer) == num_frames_to_keep:
                 _buffer.popleft()
 
@@ -85,7 +90,7 @@ class VoiceAssistant:
                     self.audio_buffer.put_nowait(frame)
                 break
 
-    def wait_for_intent(self, output_file=None):
+    def wait_for_intent(self, *, save=None):
         """Infer the intent from the audio frames.
 
         Here we buffer the audio frames in case intent inference
@@ -105,8 +110,8 @@ class VoiceAssistant:
                         utterance = self.get_utterance()
                         transcript, words = self.speech_to_text.process(utterance)
                         print("Got transcription...")
-                        if output_file:
-                            self.save_utterance(utterance, output_file)
+                        if save:
+                            self.save_utterance(utterance, save)
                         self.handle_transcription(transcript, words)
                 break
 
@@ -139,50 +144,50 @@ class VoiceAssistant:
         utterance = list()
 
         # Compute the number of silent frames to wait before ending the utterance
-        frame_length_sec = self.recorder.frame_length * 2 / self.recorder.sample_rate
+        frame_length_sec = self.get_frame_length_sec()
         num_frames = math.ceil(Config['ENDPOINT_DURATION_SEC'] / frame_length_sec)
 
         n_silent_frames = -1
         time_start = time.time()
 
-        # if audio is never detected for `timeout_seconds` seconds, end the utterance.
-        timeout_seconds = 5
-
-        while self.recorder.is_recording:
+        while self.is_recording():
             utterance.extend(self.audio_buffer.get())
-
-            voice_probability = self.voice_activity_detector.process(utterance[-Config['FRAME_LENGTH']:])
+            voice_probability = self.voice_activity_detector.process(utterance[-self.recorder.frame_length:])
 
             if n_silent_frames >= 0 and voice_probability < 0.1:
                 n_silent_frames += 1
             elif voice_probability > 0.12:
                 n_silent_frames = 0
 
-            print("Voice probability: ", voice_probability, end="\r")
-
             if (n_silent_frames == num_frames
-                or (n_silent_frames < 0 and time.time() - time_start > timeout_seconds)
+                or (n_silent_frames < 0 and time.time() - time_start > self.max_utterance_duration_sec)
             ):
                 break
-
-        print()
         return utterance
 
 
     def reset(self):
-        """Resets the state of the voice assistant."""
+        """Resets the state of the voice assistant.
+
+        Note: it is necessary to stop and start the recorder instance in order to
+        flush its inner circular buffer.
+        """
         self.speech_to_intent.reset()
-        self._reset_recorder()
+        self._pause_recorder()
         self._flush_audio_buffer()
+        self._resume_recorder()
 
-
-    def _reset_recorder(self):
-        """Stops and starts the recorder to reset its state (flush its inner buffer)."""
-        if self.recorder.is_recording:
+    def _pause_recorder(self):
+        """Pauses the recorder."""
+        if self.is_recording():
             self.recorder.stop()
-        while self.recorder.is_recording:
+        while self.is_recording():
             pass
-        self.recorder.start()
+
+    def _resume_recorder(self):
+        """Resumes the recorder."""
+        if not self.is_recording():
+            self.recorder.start()
 
     def _flush_audio_buffer(self):
         """Flushes the audio buffer."""

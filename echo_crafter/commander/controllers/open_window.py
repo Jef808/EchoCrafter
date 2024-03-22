@@ -1,3 +1,4 @@
+from typing import Optional
 import subprocess
 
 WINDOW_NAMES = [
@@ -17,8 +18,8 @@ WINDOW_NAMES_ALIAS = {
     "browser": "Google-chrome",
     "chrome": "Google-chrome",
     "emacs": "Emacs",
-    "fire fox": "Firefox",
-    "google search": "Google-chrome",
+    "fire_fox": "Firefox",
+    "google_search": "Google-chrome",
     "kitty": "kitty",
     "shell": "kitty",
     "sound": "pavucontrol",
@@ -27,12 +28,12 @@ WINDOW_NAMES_ALIAS = {
 }
 
 
-def execute(*, slots):
+def execute(*, window_name: Optional[str] = None, percentage: Optional[int] = None):
     """Open a window with the given name."""
-    if slots.get('window_name') is not None:
-        window_name = slots['window_name']
+    if window_name is not None:
         if window_name in WINDOW_NAMES_ALIAS:
             window_alias = WINDOW_NAMES_ALIAS[window_name]
+
         else:
             raise ValueError(f"Invalid window name: {window_name}.")
         ...

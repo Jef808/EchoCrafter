@@ -33,6 +33,7 @@ class _Config(TypedDict):
 
     PROJECT_ROOT: str
     DATA_DIR: str
+    COMMANDS_DIR: str
     PYTHON_PACKAGES: str
 
     PICOVOICE_API_KEY: str
@@ -52,6 +53,7 @@ class _Config(TypedDict):
 Config: _Config = {
     "PROJECT_ROOT":           str(get_project_root()),
     "DATA_DIR":               build_path("data"),
+    "COMMANDS_DIR":           build_path("echo_crafter/commander/controllers"),
     "PYTHON_PACKAGES":        build_path(".venv/lib/python3.11/site-packages/python_packages"),
 
     "PICOVOICE_API_KEY":      str(os.getenv('PICOVOICE_API_KEY')),

@@ -6,7 +6,7 @@ authors = ["Jean-Francois Arbour <jf.arbour@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.12,<3.13"
+python = ">=3.11,<3.13"
 openai = "^1.6.1"
 pvrecorder = "^1.2.2"
 pvporcupine = "^3.0.2"

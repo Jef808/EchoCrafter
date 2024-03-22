@@ -7,13 +7,15 @@ from pathlib import Path
 from typing import Literal, TypedDict
 
 
-def get_openai_api_key() -> str:
+def get_api_key(provider: Literal['openai', 'anthropic']) -> str:
     """Get the OpenAI API key from the password store."""
-    api_key = os.environ.get('OPENAI_API_KEY')
-    if api_key is None:
-        api_key = str(check_output(["pass", "openai/echo-crafter"]), encoding="utf-8").rstrip()
+    match provider:
+        case 'openai':
+            api_key = os.environ.get('OPENAI_API_KEY')
+        case 'anthropic'
+            api_key = os.environ.get('ANTHROPIC_API_KEY')
     if not api_key:
-        raise ValueError("No OpenAI API key found.")
+        raise ValueError(f"API key for {provider} not found.")
     return api_key
 
 def get_openai_log_path() -> str:
@@ -63,7 +65,7 @@ class _OpenAIConfig(TypedDict):
 
 
 OpenAIConfig: _OpenAIConfig = {
-    "API_KEY": get_openai_api_key(),
+    "API_KEY": get_api_key('openai'),
     "LOG_FILE": get_openai_log_path(),
     "HISTORY_FILE": get_history_file(),
     "MODELS": [
