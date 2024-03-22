@@ -57,9 +57,9 @@ def main():
         print(f"Terminated {filename}...")
 
     for filename in ('voice_assistant',):
-        with Path(__file__).parent.parent as cwd:
-            subprocess.Popen(['python', f'echo_crafter/speech_processor/{filename}.py'],
-                             cwd=cwd)  # type: ignore
+        cwd = Path(__file__).parent.parent
+        subprocess.Popen(['python', f'echo_crafter/speech_processor/{filename}.py'],
+                         cwd=cwd)  # type: ignore
         print(f"Started {filename}.py...")
 
 
