@@ -1,35 +1,82 @@
 context:
   expressions:
+    getScript:
+      # Generate a script from an incoming description of what it should do.
+      # Specify the programming language with a `$programmingLanguage` slot.
+      - "@promptVerb (me) [a, an] ($programmingLanguage:language) script"
     answerQuestion:
+      # Generate a response to an incoming question.
       - "@promptVerb (me) [an, the, the following] answer to [this, that, the,
         the following] question"
       - Answer (me) [this, the, the following, that] question
-    cancel:
-      - (no) wait a second
-      - (no) cancel
-      - (no) never mind
+    simplyTranscribe:
+      # Transcribe the incoming speech.
+      - Send (this, that, the following, what follows) to (the) keyboard
+      - Write [this, that, the following, what follows]
+      - Transcribe
     focusWindow:
+      # Change the active window at the window manager level.
+      # Specify the target window by either its (stumpWM) number
+      # with a `$pv.SingleDigitInteger` (e.g. `2`) or
+      # a `$pv.SingleDigitOrdinal` slot (e.g. `second`), or by
+      # its class name with a `$windowName` slot.
       - "[select, go to, focus the] window number
         $pv.SingleDigitInteger:windowNumber"
       - "[go to, focus, switch to] the [$pv.SingleDigitOrdinal:windowNumber,
         $windowName:windowName] window"
-    getScript:
-      - "@promptVerb (me) [a, an] ($programmingLanguage:language) script"
     openWindow:
+      # Launch a program in a new window.
       - "[open, launch] (a) new emacs window"
-    simplyTranscribe:
-      - Send (this, that, the following, what follows) to (the) keyboard
-      - Write [this, that, the following, what follows]
-      - Transcribe
     setVolume:
+      # Modify the audio output volume of the running machine.
+      # Specify the target volume by percentage via the `percentage`
+      # slot or mute/unmute it via the `volumeSetting` slot.
       - $volumeSetting:volumeSetting (the volume)
       - (Set) (the) [volume, sound] (to) $pv.Percent:percentage
+    cancel:
+      # User abort, there is nothing to do.
+      - (no) wait a second
+      - (no) cancel
+      - (no) never mind
+    editConfiguration:
+      # Open the configuration file for
+      - (open, edit, go to) (the) conf igg (of)
+        $configurableTool:configurableTool
+      - (open, edit, go to) (the) $configurableTool:configurableTool conf igg
+    navigate:
+      # Change the "generalized location" (its meaning depends on the active window
+      # and/or the choice of words)
+      # Specify the target address while browsing the web via a `$websiteName` slot.
+      # Specify the target directory while in a terminal via a `$directoryName` slot.
+      # Specify the target project while in the editor via a `$projectName` slot.
+      - (open, start) (the, a) (new) [browser, chrome, tab] (at, for)
+        $websiteName:websiteName
+      - "[cd, change, go, set path, look, find] (at, for, to) (the)
+        $directoryName:directoryName (dir, directory)"
+      - "[switch, open, go, change, find] (to) (the) project
+        $projectName:projectName"
+      - "[switch, open, go, change, find] (to) (the) $projectName:projectName
+        project"
+      - navigate to (the) $websiteName:websiteName (web) (site)
+    editorCommand:
+      # Perform various text editing commands while in the editor.
+      # Specify the command with an `$editorCommand` slot.
+      # Specify the type of object the incoming name refers to with
+      # an `$editorObjectType` slot.
+      - $editorCommand:editorCommand (for, at, to) (the)
+        $editorObjectType:editorObjectType
+    windowManagerCommand:
+      # Perform various window manager commands.
+      # Specify the command with a `$windowManagerCommand` slot.
+      # Optionally, specify an attribute with a `$windowManagerAttribute` slot.
+      - $windowManagerCommand:windowManagerCommand (to) (the) [screen, window]
+        ($windowManagerAttribute:windowManagerAttribute)
   slots:
     programmingLanguage:
-      - stump
+      - stump  # lisp in :stumpwm package
       - lisp
-      - e lisp
-      - c plus plus
+      - e lisp  # elisp
+      - c plus plus  # c++
       - javascript
       - emacs
       - shell
@@ -37,36 +84,125 @@ context:
     promptType:
       - question
       - script
-    volumeSetting:
-      - mute
-      - unmute
     windowName:
-      - browser
-      - chrome
-      - emacs
-      - fire fox
-      - google search
       - internet
-      - kitty
-      - shell
-      - sound
-      - sound control
       - web
-
+      - google search
+      - sound control
+      - sound
+      - chrome
+      - fire fox  # firefox
+      - kitty
+      - browser
+      - emacs
+      - shell
+    volumeSetting:
+      - unmute
+      - mute
+    projectName:
+      - email receipts  # email-receipts
+      - d m l from scratch  # dml-from-scratch
+      - coding game   # codingame
+      - context tracker  # context-tracker
+      - speech commander  # echo-crafter
+      - speech command  # echo-crafter
+      - voice commander  # echo-crafter
+      - voice command  # echo-crafter
+      - emacs l l m  # emacs/ellm
+      - e l l m  # emacs/ellm
+      - l l m  # emacs/ellm
+      - echo crafter  # echo-crafter
+    directoryName:
+      - repo  # ~/repos
+      - script  # ~/.local/scripts
+      - eth c  # /etc
+      - local share  # ~/.local/share
+      - local bin  # ~/.local/bin
+      - bin  # /bin
+      - user bin  # /usr/bin
+      - user lib  # /usr/lib
+      - user  # /usr
+      - user local  # /usr/local
+      - local  # ~/.local
+      - configuration  # ~/.config
+      - conf ig  # ~/.config
+      - home  # ~/
+      - projects  # ~/projects
+    websiteName:
+      - picovoice
+      - open ai
+      - anthropic
+      - g mail
+      - google
+    configurableTool:
+      - system d
+      - start x
+      - s x
+      - stump
+      - z s h
+      - kitty
+      - git
+      - dir env
+      - doom
+      - emacs
+    editorObjectType:
+      - argument
+      - command
+      - package
+      - menu
+      - workspace
+      - buffer
+      - s exp
+      - point
+      - line
+      - word
+      - class
+      - function
+    editorCommand:
+      - try
+      - evaluate
+      - eval
+      - compile
+      - run
+      - scroll down
+      - scroll up
+      - rename
+      - replace
+      - search
+      - look up
+      - open
+      - look at
+      - select
+      - find
+      - move
+      - jump
+    windowManagerCommand:
+      - go
+      - move
+      - kill
+      - close
+      - split
+    windowManagerAttribute:
+      - horizontally
+      - vertically
+      - right
+      - left
+      - down
+      - up
   macros:
-    articlesAndDemonstratives:
-      - a
-      - an
-      - that
-      - the
-      - this
-    generate:
-      - generate
-      - give
-      - write
     promptVerb:
       - I need
       - I want
       - generate
       - give
       - write
+    articlesAndDemonstratives:
+      - that
+      - this
+      - the
+      - an
+      - a
+    generate:
+      - give
+      - write
+      - generate

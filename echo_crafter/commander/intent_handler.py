@@ -1,17 +1,24 @@
 import os
 import re
-import yaml
 import importlib
+from typing import NamedTuple
 from echo_crafter.config import Config
 from echo_crafter.logger import setup_logger
 from echo_crafter.utils import play_sound
+from echo_crafter.commander.dictionary import slots_dictionary
+from echo_crafter.commander.intents import requires_extra_arg
 
 logger = setup_logger(__name__)
 
 class IntentHandler:
     """Handle the intent and execute the command."""
 
-    def __init__(self, *, context_file: str, controllers_dir: str):
+    class HandleIntentResult(NamedTuple):
+        """The result of handling an intent."""
+        finished: bool
+        extra_arg_required: bool
+
+    def __init__(self, *, controllers_dir: str):
         """Initialize the intent handler.
 
         Args:
@@ -19,37 +26,38 @@ class IntentHandler:
             controllers_dir: The path to the directory containing the controllers.
         """
         self.context = None
-
-        try:
-            with open(context_file, 'r') as f:
-                self.context = yaml.safe_load(f)['context']
-        except Exception as err:
-            logger.error("Error loading context file: %s", str(err))
-            raise RuntimeError("Error loading context file.")
-
         self.controllers = load_controllers(controllers_dir)
 
 
-    def __call__(self, *, intent: str, slots: dict) -> None:
+    def __call__(self, *, intent: str, slots: dict) -> HandleIntentResult:
         """Handle the intent and execute the command.
 
         Args:
             intent: The intent.
             slots: The slots associated with the intent.
         """
-        controller = self.controllers.get(camel_to_snake(intent))
+        intent = camel_to_snake(intent)
+        params = dict_camel_to_snake(translate_slots(slots))
+        controller = self.controllers.get(intent)
         if controller:
-            params = dict_camel_to_snake(slots)
+            if requires_extra_arg(intent=intent, slots=params):
+                logger.info("Intent requires an extra argument: %s", intent)
+                return self.HandleIntentResult(finished=False, extra_arg_required=True)
             controller(**params)
             play_sound(Config['INTENT_SUCCESS_WAV'])
+            return self.HandleIntentResult(finished=True, extra_arg_required=False)
         else:
             logger.error("No controller found to handle intent: %s", intent)
             raise ValueError(f"Controller for intent {intent} not found")
 
 
-def initialize(*, context_file: str = Config['RHINO_CONTEXT_SPEC'], controllers_dir: str = Config['COMMANDS_DIR']):
+def initialize(*, controllers_dir: str = Config['COMMANDS_DIR']):
     """Create an instance of the intent handler."""
-    return IntentHandler(context_file=context_file, controllers_dir=controllers_dir)
+    return IntentHandler(controllers_dir=controllers_dir)
+
+def translate_slots(slots: dict) -> dict:
+    """Translate the slots to the corresponding values in the dictionary."""
+    return {k: slots_dictionary.get(k, {}).get(v, v) for k, v in slots.items()}
 
 def dict_camel_to_snake(d: dict) -> dict:
     """Convert all keys in a dictionary from CamelCase to snake_case."""

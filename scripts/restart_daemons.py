@@ -64,4 +64,14 @@ def main():
 
 
 if __name__ == '__main__':
+    import argparse
+
+    # Create the parser
+    parser = argparse.ArgumentParser(description='Your script description here.')
+
+    # Add the --version argument
+    parser.add_argument('--version', action='version', version='%(prog)s 1.0')
+
+    # Parse the arguments
+    args = parser.parse_args()
     main()

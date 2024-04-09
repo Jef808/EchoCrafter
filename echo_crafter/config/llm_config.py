@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 import os
-from subprocess import check_output
 from pathlib import Path
 from typing import Literal, TypedDict
 
