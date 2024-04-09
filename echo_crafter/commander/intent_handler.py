@@ -6,7 +6,6 @@ from echo_crafter.config import Config
 from echo_crafter.logger import setup_logger
 from echo_crafter.utils import play_sound
 from echo_crafter.commander.dictionary import slots_dictionary
-from echo_crafter.commander.intents import requires_extra_arg
 
 logger = setup_logger(__name__)
 
@@ -29,7 +28,7 @@ class IntentHandler:
         self.controllers = load_controllers(controllers_dir)
 
 
-    def __call__(self, *, intent: str, slots: dict) -> HandleIntentResult:
+    def __call__(self, *, intent: str, slots: dict) -> None:
         """Handle the intent and execute the command.
 
         Args:
@@ -40,12 +39,8 @@ class IntentHandler:
         params = dict_camel_to_snake(translate_slots(slots))
         controller = self.controllers.get(intent)
         if controller:
-            if requires_extra_arg(intent=intent, slots=params):
-                logger.info("Intent requires an extra argument: %s", intent)
-                return self.HandleIntentResult(finished=False, extra_arg_required=True)
             controller(**params)
             play_sound(Config['INTENT_SUCCESS_WAV'])
-            return self.HandleIntentResult(finished=True, extra_arg_required=False)
         else:
             logger.error("No controller found to handle intent: %s", intent)
             raise ValueError(f"Controller for intent {intent} not found")
