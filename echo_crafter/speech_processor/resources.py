@@ -115,3 +115,4 @@ def create_rhino(*, context_file=Config['RHINO_CONTEXT_FILE'], sensitivity=0.7):
     finally:
         if rhino_instance is not None:
             rhino_instance.delete()
+

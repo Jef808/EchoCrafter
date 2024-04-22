@@ -32,7 +32,7 @@ class VoiceAssistant:
                  wake_word="Echo-crafter",
                  wake_word_sensitivity=0.5,
                  intent_sensitivity=0.5,
-                 max_utterance_duration_sec=5.0):
+                 max_utterance_duration_sec=10.0):
         self.wake_words = [wake_word]
         self.max_utterance_duration_sec = max_utterance_duration_sec
         self.wake_word_detected_time =  None
@@ -140,6 +140,7 @@ class VoiceAssistant:
         stop_event = Event()
 
         def _do_buffer_audio():
+            """Put each incoming audio frame onto the audio buffer queue."""
             while not stop_event.is_set():
                 self.audio_buffer.put_nowait(self.recorder.read())
 

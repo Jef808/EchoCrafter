@@ -2,7 +2,7 @@ import time
 import json
 import sys
 sys.path.append('os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))')
-from openai import OpenAI, OpenAIError
+from openai import OpenAI
 from echo_crafter.config import LLMConfig
 
 class OpenAIAPI:

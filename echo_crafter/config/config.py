@@ -64,7 +64,7 @@ Config: _Config = {
     "RHINO_CONTEXT_SPEC":     build_path("data/computer-commands.yml"),
     "FRAME_LENGTH":           512,
     "BUFFER_SIZE":            512 * 2 * 30,  # 30 seconds
-    "ENDPOINT_DURATION_SEC":  1.5,
+    "ENDPOINT_DURATION_SEC":  2.5,
 
     "WAKE_WORD_DETECTED_WAV": build_path("data/transcript_begin.wav"),
     "INTENT_SUCCESS_WAV":     build_path("data/transcript_success.wav"),
