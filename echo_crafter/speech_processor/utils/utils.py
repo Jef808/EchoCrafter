@@ -1,7 +1,8 @@
-#!/usr/bin/env python3
+"""Utility functions for the echo_crafter module."""
 
 import math
 from echo_crafter.config import Config
+
 
 def get_utterance(*,
                   audio_buffer,
@@ -9,6 +10,7 @@ def get_utterance(*,
                   frame_length,
                   sample_rate,
                   stop_event):
+    """Get an utterance from the audio buffer."""
     utterance = []
     frame_length_sec = frame_length * 2 / sample_rate
     endpoint_duration = Config['ENDPOINT_DURATION_SEC']

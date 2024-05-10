@@ -33,7 +33,6 @@ sphinx = "^7.2.6"
 
 [tool.poetry.scripts]
 restart_daemons = "scripts.restart_daemons:main"
-make_scripts = "echo_crafter.prompts.make-script:main"
 
 [build-system]
 requires = ["poetry-core"]

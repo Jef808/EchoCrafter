@@ -20,7 +20,7 @@ class IntentHandler:
 
         Args:
             context_file: The path to the context file.
-            controllers_dir: The path to the directory containing the controllers.
+            CONTROLLERS_DIR: The path to the directory containing the controllers.
         """
         self.context = None
         self.controllers = loader.load(controllers_dir)
@@ -44,6 +44,6 @@ class IntentHandler:
             raise ValueError(f"Controller for intent {intent} not found")
 
 
-def initialize(*, controllers_dir: str = Config['COMMANDS_DIR']):
+def initialize(*, controllers_dir: str = Config['CONTROLLERS_DIR']):
     """Create an instance of the intent handler."""
     return IntentHandler(controllers_dir=controllers_dir)
