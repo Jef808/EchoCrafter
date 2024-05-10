@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 
+"""Resource management functions for the voice input module."""
+
 from pathlib import Path
+from typing import Generator
 from contextlib import contextmanager
+from importlib import import_module
+
 from pvleopard import LeopardError, create as createLeopard
 from pvrhino import RhinoError, create as createRhino
 from pvporcupine import KEYWORD_PATHS, PorcupineError, create as createPorcupine
@@ -9,24 +14,43 @@ from pvcobra import CobraError, create as createCobra
 from pvrecorder import PvRecorder
 from echo_crafter.config import Config
 from echo_crafter.logger import setup_logger
-from typing import Generator
 
 logger = setup_logger(__name__)
 
 
-def pv_keyword_path(keyword):
+def porcupine_keyword_path(keyword):
     """Get the path to the keyword file for the given keyword."""
     keyword_path = KEYWORD_PATHS.get(keyword, "")
     if not keyword_path:
         for f in Path(Config['DATA_DIR']).glob('*.ppn'):
-            print("found file: ", f)
-            filename = str(f.stem)
-            if filename.startswith(keyword):
-                keyword_path = str(f)
-                break
-    if not keyword_path:
-        raise ValueError(f"Keyword file not found for {keyword}")
-    return keyword_path
+            filename = f.stem
+            if str(filename).startswith(keyword):
+                return f
+    return None
+
+
+def porcupine_model_path_by_language(language):
+    """Get the path to the model file for the given language."""
+    if language == "en":
+        return None
+    return Config[f'PORCUPINE_MODEL_FILE_{language.upper()}']
+
+
+def porcupine_get_paths(keyword):
+    """Get the paths to the keyword files for the given keyword."""
+    keyword_path = porcupine_keyword_path(keyword)
+    assert keyword_path.exists(), "Failed to find keyword filepath"
+
+    keyword_filename = keyword_path.stem
+    language = keyword_filename.split('_')[1]
+
+    if language == "en":
+        return keyword_path, None
+
+    model_path = porcupine_model_path_by_language(language)
+    assert model_path.exists(), "Failed to find model filepath for language {language}"
+
+    return keyword_path, model_path
 
 
 @contextmanager
@@ -35,13 +59,14 @@ def create_porcupine(*, sensitivity, wake_word):
     porcupine_instance = None
     try:
         porcupine_instance = createPorcupine(
-            keyword_paths=[pv_keyword_path(wake_word)],
+            keyword_paths=[Config['PORCUPINE_KEYWORD_FILE']],
+            model_path=Config['PORCUPINE_MODEL_FILE'],
             sensitivities=[sensitivity],
             access_key=Config['PICOVOICE_API_KEY']
         )
         yield porcupine_instance
     except (PorcupineError, ValueError) as e:
-        logger.error("Porcupine failed to initialize: ", e, exc_info=True)
+        logger.exception("Porcupine failed to initialize: %s", e, exc_info=True)
         raise
     finally:
         if porcupine_instance is not None:
@@ -58,7 +83,7 @@ def create_cobra():
         )
         yield cobra_instance
     except CobraError as e:
-        logger.error("Cobra failed to initialize: ", e, exc_info=True)
+        logger.exception("Cobra failed to initialize: %s", e, exc_info=True)
     finally:
         if cobra_instance is not None:
             cobra_instance.delete()
@@ -75,7 +100,7 @@ def create_leopard(*, model_file=Config['LEOPARD_MODEL_FILE']):
             )
         yield leopard_instance
     except LeopardError as e:
-        logger.error("Leopard failed to initialize: ", e, exc_info=True)
+        logger.exception("Leopard failed to initialize: %s", e, exc_info=True)
     finally:
         if leopard_instance is not None:
             leopard_instance.delete()
@@ -91,7 +116,7 @@ def create_recorder(*, frame_length=Config['FRAME_LENGTH']) -> Generator[PvRecor
         )
         yield recorder_instance
     except Exception as e:
-        logger.error("Failed to initialize recorder: ", e, exc_info=True)
+        logger.exception("Failed to initialize recorder: %s", e, exc_info=True)
     finally:
         if recorder_instance is not None:
             if recorder_instance.is_recording:
@@ -111,8 +136,7 @@ def create_rhino(*, context_file=Config['RHINO_CONTEXT_FILE'], sensitivity=0.7):
         )
         yield rhino_instance
     except RhinoError as e:
-        logger.error("Rhino failed to initialize: ", e, exc_info=True)
+        logger.exception("Rhino failed to initialize: %s", e, exc_info=True)
     finally:
         if rhino_instance is not None:
             rhino_instance.delete()
-

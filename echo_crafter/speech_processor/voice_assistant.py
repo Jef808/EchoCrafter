@@ -23,16 +23,17 @@ from echo_crafter.utils import play_sound
 from echo_crafter.speech_processor.utils import utils
 
 logger = setup_logger(__name__)
+DEFAULT_WAKE_WORD = "echo-crafter"
 
 
 class VoiceAssistant:
     """A voice assistant that listens for a wake word and processes audio for intent recognition."""
 
     def __init__(self, *,
-                 wake_word="Echo-crafter",
-                 wake_word_sensitivity=0.5,
+                 wake_word="Pierrette",
+                 wake_word_sensitivity=0.8,
                  intent_sensitivity=0.5,
-                 max_utterance_duration_sec=10.0):
+                 max_utterance_duration_sec=5.0):
         self.wake_words = [wake_word]
         self.max_utterance_duration_sec = max_utterance_duration_sec
         self.wake_word_detected_time =  None
