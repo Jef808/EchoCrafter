@@ -3,7 +3,7 @@
 import os
 from pydantic_settings import BaseSettings
 from subprocess import check_output
-from pathlib Path
+from pathlib import Path
 from typing import TypedDict
 
 
@@ -16,7 +16,7 @@ def get_picovoice_api_key() -> str:
     """Get the Picovoice API key from the environment."""
     api_key = os.environ.get('PICOVOICE_API_KEY')
     if not api_key:
-        api_key = str(check_output(["pass", "cnsole.picovoice.com/api_key"]), encoding="utf-8").rstrip()
+        api_key = str(check_output(["pass", "echo_crafter/picovoice_api_key"]), encoding="utf-8").rstrip()
     if not api_key:
         raise ValueError("No Picovoice API key found.")
     else:
@@ -27,7 +27,7 @@ def get_picovoice_api_key() -> str:
 def get_deepgram_api_key() -> str:
     api_key = os.environ.get("DG_API_KEY")
     if not api_key:
-        api_key = str(check_output(["pass", "deepgram/echo_crafter_api_key"]), encoding="utf-8").rstrip()
+        api_key = str(check_output(["pass", "echo_crafter/deepgram_api_key"]), encoding="utf-8").rstrip()
     if not api_key:
         raise ValueError("No Deepgram API key found.")
     else:
