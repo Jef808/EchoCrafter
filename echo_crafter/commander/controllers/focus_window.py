@@ -23,9 +23,8 @@ WINDOW_NAMES_ALIAS = {
 
 def focus_window_by_name(window_name: str):
     """Focus the window with the given name."""
-    name = WINDOW_NAMES_ALIAS.get(window_name, '')
     subprocess.Popen(
-        ['xdotool', 'search', '--onlyvisible', '--class', name, 'windowactivate']
+        ['xdotool', 'search', '--onlyvisible', '--class', window_name, 'windowactivate']
     )
 
 
@@ -40,7 +39,7 @@ def focus_window_by_number(window_number: str):
 def main():
     parser = argparse.ArgumentParser(description='Focus a window by its name or number.')
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--window-number', type=str, help='Window number to focus.')
+    group.add_argument('--window_number', type=str, help='Window number to focus.')
     group.add_argument('--window_name', type=str, help='Window name to focus.')
 
     args = parser.parse_args()

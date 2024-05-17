@@ -29,8 +29,6 @@ class IntentHandler:
         self.context = None
         self.controllers = loader.load(controllers_dir)
 
-        print("Controllers", self.controllers)
-
     def __call__(self, *, intent: str, slots: dict) -> None:
         """Handle the intent and execute the command.
 
