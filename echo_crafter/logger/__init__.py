@@ -7,7 +7,8 @@ import os
 from pathlib import Path
 
 LOG_FILE = Path(os.environ.get('EC_LOG_DIR', '')) / "transcripts.jsonl"
-only_true_once = True
+ONLY_TRUE_ONCE = True
+
 
 class CustomRecord(logging.LogRecord):
     """Custom LogRecord class with a timestamp attribute."""

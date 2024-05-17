@@ -7,38 +7,41 @@ from typing import Generator
 from contextlib import contextmanager
 from importlib import import_module
 
+from pvcheetah import CheetahError, create as createCheetah
 from pvleopard import LeopardError, create as createLeopard
 from pvrhino import RhinoError, create as createRhino
 from pvporcupine import KEYWORD_PATHS, PorcupineError, create as createPorcupine
 from pvcobra import CobraError, create as createCobra
 from pvrecorder import PvRecorder
+
 from echo_crafter.config import Config
 from echo_crafter.logger import setup_logger
+from echo_crafter.speech_processor.transcribe_deepgram_file import create as createDeepgram
 
 logger = setup_logger(__name__)
 
 
-def porcupine_keyword_path(keyword):
+def porcupine_keyword_path(keyword) -> Path:
     """Get the path to the keyword file for the given keyword."""
-    keyword_path = KEYWORD_PATHS.get(keyword, "")
-    if not keyword_path:
-        for f in Path(Config['DATA_DIR']).glob('*.ppn'):
-            filename = f.stem
-            if str(filename).startswith(keyword):
-                return f
+    if keyword in KEYWORD_PATHS:
+        return Path(KEYWORD_PATHS[keyword])
+    for f in Path(Config['DATA_DIR']).glob('*.ppn'):
+        filename = f.stem
+        if filename.startswith(keyword):
+            return Path(f)
     return None
-
 
 def porcupine_model_path_by_language(language):
     """Get the path to the model file for the given language."""
-    if language == "en":
-        return None
     return Config[f'PORCUPINE_MODEL_FILE_{language.upper()}']
 
 
 def porcupine_get_paths(keyword):
     """Get the paths to the keyword files for the given keyword."""
     keyword_path = porcupine_keyword_path(keyword)
+    if keyword_path is None:
+        return None, None
+
     assert keyword_path.exists(), "Failed to find keyword filepath"
 
     keyword_filename = keyword_path.stem
@@ -48,19 +51,20 @@ def porcupine_get_paths(keyword):
         return keyword_path, None
 
     model_path = porcupine_model_path_by_language(language)
-    assert model_path.exists(), "Failed to find model filepath for language {language}"
+    assert Path(model_path).exists(), "Failed to find model filepath for language {language}"
 
     return keyword_path, model_path
 
 
 @contextmanager
-def create_porcupine(*, sensitivity, wake_word):
+def create_porcupine(*, wake_word, sensitivity):
     """Create a Porcupine instance and yield it. Delete the instance upon exit."""
     porcupine_instance = None
     try:
+        keyword_path, model_path = porcupine_get_paths(wake_word)
         porcupine_instance = createPorcupine(
-            keyword_paths=[Config['PORCUPINE_KEYWORD_FILE']],
-            model_path=Config['PORCUPINE_MODEL_FILE'],
+            keyword_paths=[keyword_path],
+            model_path=model_path,
             sensitivities=[sensitivity],
             access_key=Config['PICOVOICE_API_KEY']
         )
@@ -107,6 +111,22 @@ def create_leopard(*, model_file=Config['LEOPARD_MODEL_FILE']):
 
 
 @contextmanager
+def create_cheetah(*, model_file=Config['CHEETAH_MODEL_FILE']):
+    cheetah_instance = None
+    try:
+        cheetah_instance = createCheetah(
+            access_key=Config['PICOVOICE_API_KEY'],
+            model_path=model_file
+            )
+        yield cheetah_instance
+    except CheetahError as e:
+        logger.exception("Cheetah failed to initialize: %s", e, exc_info=True)
+    finally:
+        if cheetah_instance is not None:
+            cheetah_instance.delete()
+
+
+@contextmanager
 def create_recorder(*, frame_length=Config['FRAME_LENGTH']) -> Generator[PvRecorder, None, None]:
     """Create a PvRecorder instance and yield it. Delete the instance upon exit."""
     recorder_instance = None
@@ -140,3 +160,15 @@ def create_rhino(*, context_file=Config['RHINO_CONTEXT_FILE'], sensitivity=0.7):
     finally:
         if rhino_instance is not None:
             rhino_instance.delete()
+
+@contextmanager
+def create_deepgram():
+    """Create a DeepgramClient instance and yield it. Delete the instance upon exit."""
+    deepgram_instance = None
+    try:
+        deepgram_instance = createDeepgram(
+            access_key=Config['DEEPGRAM_API_KEY']
+        )
+        yield deepgram_instance
+    except Exception as e:
+        logger.exception("Deepgram failed to initialize: %s", e, exc_info=True)

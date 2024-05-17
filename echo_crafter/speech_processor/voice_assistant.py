@@ -9,7 +9,8 @@ from resources import (
     create_porcupine,
     create_rhino,
     create_cobra,
-    create_leopard
+    create_leopard,
+    create_deepgram
 )
 from collections import deque
 from queue import Empty, Queue
@@ -23,27 +24,28 @@ from echo_crafter.utils import play_sound
 from echo_crafter.speech_processor.utils import utils
 
 logger = setup_logger(__name__)
-DEFAULT_WAKE_WORD = "echo-crafter"
+DEFAULT_WAKE_WORD = "Pierrette"
 
 
 class VoiceAssistant:
     """A voice assistant that listens for a wake word and processes audio for intent recognition."""
 
     def __init__(self, *,
-                 wake_word="Pierrette",
+                 wake_word=DEFAULT_WAKE_WORD,
                  wake_word_sensitivity=0.8,
                  intent_sensitivity=0.5,
-                 max_utterance_duration_sec=5.0):
+                 max_utterance_duration_sec=10.0):
         self.wake_words = [wake_word]
         self.max_utterance_duration_sec = max_utterance_duration_sec
         self.wake_word_detected_time =  None
         self.audio_buffer = Queue()
-        self.intent_handler = intent_handler.initialize()
+        self.intent_handler = intent_handler.create()
         with ExitStack() as stack:
             self.voice_activity_detector = stack.enter_context(create_cobra())
             self.wake_word_detector = stack.enter_context(create_porcupine(wake_word=wake_word, sensitivity=wake_word_sensitivity))
             self.speech_to_intent = stack.enter_context(create_rhino(context_file=Config['RHINO_CONTEXT_FILE'], sensitivity=intent_sensitivity))
-            self.speech_to_text = stack.enter_context(create_leopard(model_file=Config['LEOPARD_MODEL_FILE']))
+            #self.speech_to_text = stack.enter_context(create_leopard(model_file=Config['LEOPARD_MODEL_FILE']))
+            self.speech_to_text = stack.enter_context(create_deepgram())
             self.recorder = stack.enter_context(create_recorder())
             self.shut_down = stack.pop_all().close
 
@@ -73,7 +75,7 @@ class VoiceAssistant:
               and the beginning of the "intent-inference" step.
 
         This can be explained as follows: It takes me about 600ms to say "Echo-crafter" (the default wake word). At 1024 bytes per frame and
-        16kHoz sample rate, this corresponds to 10 frames. Suppose it takes the wake-word detection engine about 300ms to detect a spoken wake-word. Then
+        16kHz sample rate, this corresponds to 10 frames. Suppose it takes the wake-word detection engine about 300ms to detect a spoken wake-word. Then
         we the detection will only happen about 5 frames after the wake-word was spoken. Those frames will be lost, unless we save them and prepend them
         to the audio buffer for the next processing step.
         """
@@ -109,12 +111,12 @@ class VoiceAssistant:
                     if inference.is_understood:
                         print(json.dumps(inference, indent=2))
                         play_sound(Config['INTENT_SUCCESS_WAV'])
-                        self.intent_handler(**inference)
+                        self.intent_handler(intent=inference.intent, slots=inference.slots)
                     else:
                         print("Intent not understood, transcribing...")
                         stop_event = lambda: (
                             (self.wake_word_detected_time and
-                             time.time() - self.wake_word_detected_time > self.max_utterance_duration_sec) or
+                            time.time() - self.wake_word_detected_time > self.max_utterance_duration_sec) or
                             self.audio_buffer.empty() and not self.is_recording()
                         )
                         utterance = utils.get_utterance(
@@ -128,7 +130,7 @@ class VoiceAssistant:
                         print("Got transcription...")
                         if save:
                             self.save_utterance(utterance, save)
-                        self.handle_transcription(transcript, words)
+                        self.handle_transcription_dg(transcript, words)
                     break
 
     @contextmanager
@@ -198,18 +200,25 @@ class VoiceAssistant:
         audio and save it to the WAV file is as a sequence of signed 16-bit integers.
         Therefore, we need to pack them two at a time before writing them to the WAV file.
         """
-        with wave.open(file_path, 'wf') as wf:
+        with wave.open(file_path, 'wb') as wf:
             wf.setparams((1, 2, 16000, 512, "NONE", "NONE"))
             wf.writeframes(struct.pack("h" * len(utterance), *utterance))
 
-    def handle_transcription(self, transcript, words):
+    def handle_transcription_pv(self, transcript, words):
         """Handle a transcription for the speech that was not recognized by the speech-to-intent engine.
         """
         print(transcript)
-        print(tabulate(
-            words,
-            headers=['word', 'start_sec', 'end_sec', 'confidence', 'speaker_tag'],
-            floatfmt='.2f'))
+        print(tabulate(words,
+                       headers=['word', 'start_sec', 'end_sec', 'confidence'],
+                       floatfmt='.2f'))
+
+    def handle_transcription_dg(self, transcript, words):
+        """Handle a transcription for the speech that was not recognized by the speech-to-intent engine.
+        """
+        print(transcript)
+        print(tabulate(words,
+                       headers=['word', 'start', 'end', 'confidence'],
+                       floatfmt='.2f'))
 
 if __name__ == "__main__":
     assistant = VoiceAssistant()

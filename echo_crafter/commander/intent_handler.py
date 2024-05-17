@@ -1,11 +1,15 @@
+"""Handle the intent and execute the command."""
+
 from typing import NamedTuple
 from echo_crafter.config import Config
 from echo_crafter.logger import setup_logger
 from echo_crafter.utils import play_sound
 from echo_crafter.commander.controllers import loader
-from echo_crafter.commander.utils import translate_slots, dict_camel_to_snake, camel_to_snake
+from echo_crafter.commander.utils import format_intent, format_slots
+from echo_crafter.commander import dictionary
 
 logger = setup_logger(__name__)
+
 
 class IntentHandler:
     """Handle the intent and execute the command."""
@@ -16,7 +20,7 @@ class IntentHandler:
         extra_arg_required: bool
 
     def __init__(self, *, controllers_dir: str):
-        """Initialize the intent handler.
+        """Create the intent handler.
 
         Args:
             context_file: The path to the context file.
@@ -25,6 +29,7 @@ class IntentHandler:
         self.context = None
         self.controllers = loader.load(controllers_dir)
 
+        print("Controllers", self.controllers)
 
     def __call__(self, *, intent: str, slots: dict) -> None:
         """Handle the intent and execute the command.
@@ -33,9 +38,10 @@ class IntentHandler:
             intent: The intent.
             slots: The slots associated with the intent.
         """
-        intent = camel_to_snake(intent)
-        params = translate_slots(dict_camel_to_snake(slots))
-        controller = self.controllers.get(intent)
+        intent = format_intent(intent)
+        params = format_slots(slots)
+        controller = self.controllers[intent]
+
         if controller:
             controller(**params)
             play_sound(Config['INTENT_SUCCESS_WAV'])
@@ -44,6 +50,7 @@ class IntentHandler:
             raise ValueError(f"Controller for intent {intent} not found")
 
 
-def initialize(*, controllers_dir: str = Config['CONTROLLERS_DIR']):
+def create(*, controllers_dir: str = Config['CONTROLLERS_DIR']):
     """Create an instance of the intent handler."""
     return IntentHandler(controllers_dir=controllers_dir)
+    

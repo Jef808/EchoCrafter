@@ -4,15 +4,28 @@
 
 import subprocess
 from typing import Optional
-from utils import current_active_window
+from utils import current_active_window, project_directory
+from echo_crafter.commander import dictionary as cmd_dict
 
-def navigate_browser(website_name: str, browser_name: str) -> None:
+
+def navigate_website(website_name: str) -> None:
     """Open the given website in the given browser."""
 
-    print(f"Navigating to {website_name} in {browser_name}")
+    active_window_name = current_active_window()
 
-    subprocess.Popen([browser_name,
-                      website_name])
+    browser_name = ("google-chrome-stable" if "chrome" in active_window_name else
+                    "firefox" if "firefox" in active_window_name else
+                    "chromium" if "chromium" in active_window_name else
+                    None)
+
+    if browser_name is not None:
+        print(f"Navigating to {website_name} in {browser_name}")
+        url = cmd_dict.slots_dictionary["websiteName"].get(website_name)
+        with subprocess.Popen([browser_name, url]):
+            pass
+    else:
+        print("No browser found in the active window")
+
 
 def navigate_directory_shell(directory_name: str) -> None:
     """Change the current directory to DIRECTORY_NAME.
@@ -22,15 +35,18 @@ def navigate_directory_shell(directory_name: str) -> None:
     """
 
     content_string = f"cd {directory_name}"
-    subprocess.run(["xdotool",
-                    "type",
-                    "--clearmodifiers",
-                    "--delay",
-                    "0",
-                    content])
-    subprocess.Popen(["xdotool",
-                      "key",
-                      "KP_Enter"])
+    with subprocess.Popen(["xdotool",
+                           "type",
+                           "--clearmodifiers",
+                           "--delay",
+                           "0",
+                           content_string]) as proc:
+        proc.wait()
+    with subprocess.Popen(["xdotool",
+                           "key",
+                           "KP_Enter"]):
+        print(f"Changed directory to {directory_name}")
+
 
 def navigate_directory_emacs(directory_name: str) -> None:
     """Evaluate the Emacs function 'find-file-other-window'.
@@ -41,10 +57,13 @@ def navigate_directory_emacs(directory_name: str) -> None:
     """
 
     emacs_socket = "/run/user/1000/emacs/server"
-    print(f'Running emacsclient -e (find-file-other-window "{directory_name}")')
-    subprocess.Popen(["emacsclient",
-                      "-e",
-                      f'(find-file-other-window "{directory_name}")'])
+    with subprocess.Popen(["emacsclient",
+                           "-s",
+                           emacs_socket,
+                           "-e",
+                           f'(find-file-other-window "{directory_name}")']):
+        print(f"Opening {directory_name} in Emacs")
+
 
 def navigate_directory(directory_name: str) -> None:
     """Open the given directory."""
@@ -55,21 +74,22 @@ def navigate_directory(directory_name: str) -> None:
 
     if "Emacs" in active_window_name:
         print(f'Running emacsclient -e (find-file-other-window "{directory_name}")')
-        subprocess.Popen(["emacsclient",
-                          "-e",
-                          f'(find-file-other-window "{directory_name}")'])
+        navigate_directory_emacs(directory_name)
+
     elif "kitty" in active_window_name:
         content = f"cd {directory_name}"
         print(f"Running 'xdotool type --clearmodifers --delay 0 {content} && xdotool key KP_Enter'")
-        subprocess.run(["xdotool",
-                        "type",
-                        "--clearmodifiers",
-                        "--delay",
-                        "0",
-                        content])
-        subprocess.Popen(["xdotool",
-                          "key",
-                          "KP_Enter"])
+        with subprocess.Popen(["xdotool",
+                               "type",
+                               "--clearmodifiers",
+                               "--delay",
+                               "0",
+                               content]) as proc:
+            proc.wait()
+        with subprocess.Popen(["xdotool",
+                               "key",
+                               "KP_Enter"]):
+            pass
 
 
 def main(*,
@@ -80,45 +100,23 @@ def main(*,
 
     print(f"Executing `navigate` intent with locals {locals()}")
 
-    active_window_name = subprocess.check_output(
-        ["xdotool", "getactivewindow", "getwindowclassname"]
-    ).decode("utf-8")
-
-    print(f"Active window class name: {active_window_name}")
-
-    directory_name = (directory_name if directory_name else
-                      f"~/projects/{project_name}" if project_name else
-                      None)
+    directory_name = (directory_name if directory_name
+                      else project_directory(project_name) if project_name
+                      else None)
 
     if directory_name:
         print(f"Directory name: {directory_name}")
-        if "Emacs" in active_window_name:
-            print(f'Running emacsclient -e (find-file-other-window "{directory_name}")')
-            subprocess.Popen(["emacsclient",
-                              "-e",
-                              f'(find-file-other-window "{directory_name}")'])
-        elif "kitty" in active_window_name:
-            content = f"cd {directory_name}"
-            print(f"Running 'xdotool type --clearmodifers --delay 0 {content} && xdotool key KP_Enter'")
-            subprocess.run(["xdotool",
-                            "type",
-                            "--clearmodifiers",
-                            "--delay",
-                            "0",
-                            content])
-            subprocess.Popen(["xdotool",
-                              "key",
-                              "KP_Enter"])
+        navigate_directory(directory_name)
+
+    elif project_name:
+        print(f"Project name: {project_name}")
+        directory_name = project_directory(project_name)
+        navigate_directory(directory_name)
 
     elif website_name:
         print(f"Website name: {website_name}")
-        browser_name = ("google-chrome-stable" if "chrome" in active_window_name else
-                        "firefox" if "firefox" in active_window_name else
-                        "chromium" if "chromium" in active_window_name else
-                        None)
-        if browser_name:
-            subprocess.Popen([browser_name,
-                              website_name])
+        navigate_website(website_name)
+
 
 
 if __name__ == "__main__":
@@ -131,16 +129,6 @@ if __name__ == "__main__":
     group.add_argument('--website_name', help='Website name')
     args = parser.parse_args()
 
-    arg = None
-
-    if args.directory_name:
-        arg = args.directory_name
-    elif args.project_name:
-        arg = args.project_name
-    elif args.website_name:
-        arg = args.website_name
-
-    if arg is None:
-        raise ArgumentError("One of --directory_name, --project_name or --website_name must be provided")
-
-    main(arg)
+    main(directory_name=args.directory_name,
+         project_name=args.project_name,
+         website_name=args.website_name)
